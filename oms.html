@@ -387,7 +387,7 @@ function processImportFile(file, type){
       let parsed=[];
       if(type==='events'){
         // All sheets except 'Lists' or metadata sheets
-        const skip=['lists','list','categories','lookup','meta','sheet'];
+        const skip=['Lists','2026 Calendar','2027 Calendar','2028 Calendar','SOPs','Starter Template','Sample Agenda','Sheet1','Sample Chart'];
         wb.SheetNames.forEach(name=>{
           if(skip.some(s=>name.toLowerCase().includes(s)))return;
           parsed=parsed.concat(parseEventsSheet(wb.Sheets[name],name));
