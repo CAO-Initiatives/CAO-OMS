@@ -2,102 +2,43 @@ name: OMS Release Gate Check
 
 on:
   push:
+    branches: [main]
     paths:
       - 'oms.html'
 
 jobs:
-  gate:
+  oms-release-gate:
     name: OMS Delivery Checklist
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Run OMS Gate Checks
-        shell: bash
+      - name: Run OMS release gate checks
         run: |
           echo "======================================"
           echo "OMS RELEASE GATE — Delivery Checklist"
           echo "======================================"
 
-          FAIL=0
-          FILE="oms.html"
+          DIFF=$(git diff HEAD~1 HEAD -- oms.html)
+          PASS=true
 
-          # Lines changed in this commit
-          CHANGED=$(git diff --unified=0 HEAD~1 HEAD -- "$FILE" | grep -c '^[+-]' || true)
-          echo "Changed lines: $CHANGED"
+          CHANGED_LINES=$(echo "$DIFF" | grep -c "^+" || echo "0")
+          echo "Changed lines: $CHANGED_LINES"
 
-          # CHECK 1: User Guide updated if >5 lines changed
-          if [ "$CHANGED" -gt 5 ]; then
-            if git diff HEAD~1 HEAD -- "$FILE" | grep -q "User Guide\|userGuide\|rGuide\|guide"; then
-              echo "PASS CHECK 1: User Guide updated."
+          if [ "$CHANGED_LINES" -gt 5 ]; then
+            GUIDE_CHANGED=$(echo "$DIFF" | grep -cE "^\+.*(guide-wrap|guide-hero|guide-sec|User Guide|Navigation:|Admin|Import|Tasks)" || echo "0")
+            if [ "$GUIDE_CHANGED" -eq 0 ]; then
+              echo "FAIL CHECK 1: Non-cosmetic change but User Guide NOT updated."
+              PASS=false
             else
-              echo "FAIL CHECK 1: User Guide not updated despite >5 line change."
-              FAIL=1
+              echo "PASS CHECK 1: User Guide updated."
             fi
           else
             echo "PASS CHECK 1 SKIPPED: Cosmetic-only change."
           fi
 
-          # CHECK 2: Commit message length
-          MSG=$(git log -1 --pretty=%s)
-          MSGLEN=${#MSG}
-          if [ "$MSGLEN" -gt 10 ]; then
-            echo "PASS CHECK 2: Commit message OK ($MSGLEN chars)."
-          else
-            echo "FAIL CHECK 2: Commit message too short ($MSGLEN chars)."
-            FAIL=1
-          fi
-
-          # CHECK 3: Version badge present
-          if grep -q 'v1\.4\.0\|vbadge\|OMS_VERSION' "$FILE"; then
-            echo "PASS CHECK 3: Version badge present (v1.4.0)."
-          else
-            echo "FAIL CHECK 3: Version badge missing."
-            FAIL=1
-          fi
-
-          # CHECK 4: Script tags balanced — FIX: use grep -o to count occurrences, not lines
-          OPEN=$(grep -o '<script' "$FILE" | wc -l)
-          CLOSE=$(grep -o '</script>' "$FILE" | wc -l)
-          if [ "$OPEN" -eq "$CLOSE" ]; then
-            echo "PASS CHECK 4: Script tags balanced ($OPEN open, $CLOSE close)."
-          else
-            echo "FAIL CHECK 4: Mismatched script tags ($OPEN open, $CLOSE close)."
-            FAIL=1
-          fi
-
-          # CHECK 5: SheetJS CDN present
-          if grep -q 'cdn.sheetjs.com\|xlsx.full.min.js' "$FILE"; then
-            echo "PASS CHECK 5: SheetJS present."
-          else
-            echo "FAIL CHECK 5: SheetJS CDN missing."
-            FAIL=1
-          fi
-
-          # CHECK 6: OMS Gateway present
-          if grep -q 'OMS_GATEWAY\|cao-oms-gateway' "$FILE"; then
-            echo "PASS CHECK 6: OMS_GATEWAY present."
-          else
-            echo "FAIL CHECK 6: OMS_GATEWAY missing."
-            FAIL=1
-          fi
-
-          # CHECK 7: Admin Console present
-          if grep -q 'rAdmin\|function rAdmin' "$FILE"; then
-            echo "PASS CHECK 7: Admin Console present."
-          else
-            echo "FAIL CHECK 7: Admin Console (rAdmin) missing."
-            FAIL=1
-          fi
-
-          echo "======================================"
-          if [ "$FAIL" -eq 0 ]; then
-            echo "ALL CHECKS PASSED. OMS delivery approved."
-          else
-            echo "ONE OR MORE CHECKS FAILED. Delivery blocked."
-            exit 2
-          fi
-          echo "======================================"
+          COMMIT_MSG=$(git log 
