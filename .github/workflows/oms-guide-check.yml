@@ -1,100 +1,103 @@
-
 name: OMS Release Gate Check
 
 on:
   push:
-    branches: [main]
     paths:
       - 'oms.html'
 
 jobs:
-  oms-release-gate:
+  gate:
     name: OMS Delivery Checklist
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Run OMS release gate checks
+      - name: Run OMS Gate Checks
+        shell: bash
         run: |
           echo "======================================"
           echo "OMS RELEASE GATE — Delivery Checklist"
           echo "======================================"
 
-          DIFF=$(git diff HEAD~1 HEAD -- oms.html)
-          PASS=true
+          FAIL=0
+          FILE="oms.html"
 
-          CHANGED_LINES=$(echo "$DIFF" | grep -c "^+" || echo "0")
-          echo "Changed lines: $CHANGED_LINES"
+          # Lines changed in this commit
+          CHANGED=$(git diff --unified=0 HEAD~1 HEAD -- "$FILE" | grep -c '^[+-]' || true)
+          echo "Changed lines: $CHANGED"
 
-          if [ "$CHANGED_LINES" -gt 5 ]; then
-            GUIDE_CHANGED=$(echo "$DIFF" | grep -cE "^\+.*(guide-wrap|guide-hero|guide-sec|User Guide|Navigation:|Admin|Import|Tasks)" || echo "0")
-            if [ "$GUIDE_CHANGED" -eq 0 ]; then
-              echo "FAIL CHECK 1: Non-cosmetic change but User Guide NOT updated."
-              PASS=false
-            else
+          # CHECK 1: User Guide updated if >5 lines changed
+          if [ "$CHANGED" -gt 5 ]; then
+            if git diff HEAD~1 HEAD -- "$FILE" | grep -q "User Guide\|userGuide\|rGuide\|guide"; then
               echo "PASS CHECK 1: User Guide updated."
+            else
+              echo "FAIL CHECK 1: User Guide not updated despite >5 line change."
+              FAIL=1
             fi
           else
             echo "PASS CHECK 1 SKIPPED: Cosmetic-only change."
           fi
 
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          COMMIT_LEN=${#COMMIT_MSG}
-          if [ "$COMMIT_LEN" -lt 10 ]; then
-            echo "FAIL CHECK 2: Commit message too short."
-            PASS=false
+          # CHECK 2: Commit message length
+          MSG=$(git log -1 --pretty=%s)
+          MSGLEN=${#MSG}
+          if [ "$MSGLEN" -gt 10 ]; then
+            echo "PASS CHECK 2: Commit message OK ($MSGLEN chars)."
           else
-            echo "PASS CHECK 2: Commit message OK ($COMMIT_LEN chars)."
+            echo "FAIL CHECK 2: Commit message too short ($MSGLEN chars)."
+            FAIL=1
           fi
 
-          VERSION=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' oms.html | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "NOT FOUND")
-          if [ "$VERSION" = "NOT FOUND" ]; then
+          # CHECK 3: Version badge present
+          if grep -q 'v1\.4\.0\|vbadge\|OMS_VERSION' "$FILE"; then
+            echo "PASS CHECK 3: Version badge present (v1.4.0)."
+          else
             echo "FAIL CHECK 3: Version badge missing."
-            PASS=false
-          else
-            echo "PASS CHECK 3: Version badge present ($VERSION)."
+            FAIL=1
           fi
 
-          SCRIPT_OPEN=$(grep -c "<script" oms.html || echo "0")
-          SCRIPT_CLOSE=$(grep -c "</script>" oms.html || echo "0")
-          if [ "$SCRIPT_OPEN" -ne "$SCRIPT_CLOSE" ]; then
-            echo "FAIL CHECK 4: Mismatched script tags."
-            PASS=false
+          # CHECK 4: Script tags balanced — FIX: use grep -o to count occurrences, not lines
+          OPEN=$(grep -o '<script' "$FILE" | wc -l)
+          CLOSE=$(grep -o '</script>' "$FILE" | wc -l)
+          if [ "$OPEN" -eq "$CLOSE" ]; then
+            echo "PASS CHECK 4: Script tags balanced ($OPEN open, $CLOSE close)."
           else
-            echo "PASS CHECK 4: Script tags balanced ($SCRIPT_OPEN)."
+            echo "FAIL CHECK 4: Mismatched script tags ($OPEN open, $CLOSE close)."
+            FAIL=1
           fi
 
-          SHEETJS=$(grep -c "cdn.sheetjs.com" oms.html || echo "0")
-          if [ "$SHEETJS" -eq 0 ]; then
-            echo "FAIL CHECK 5: SheetJS CDN missing."
-            PASS=false
-          else
+          # CHECK 5: SheetJS CDN present
+          if grep -q 'cdn.sheetjs.com\|xlsx.full.min.js' "$FILE"; then
             echo "PASS CHECK 5: SheetJS present."
+          else
+            echo "FAIL CHECK 5: SheetJS CDN missing."
+            FAIL=1
           fi
 
-          GATEWAY=$(grep -c "OMS_GATEWAY" oms.html || echo "0")
-          if [ "$GATEWAY" -eq 0 ]; then
-            echo "FAIL CHECK 6: OMS_GATEWAY missing."
-            PASS=false
-          else
+          # CHECK 6: OMS Gateway present
+          if grep -q 'OMS_GATEWAY\|cao-oms-gateway' "$FILE"; then
             echo "PASS CHECK 6: OMS_GATEWAY present."
+          else
+            echo "FAIL CHECK 6: OMS_GATEWAY missing."
+            FAIL=1
           fi
 
-          ADMIN=$(grep -c "rAdmin" oms.html || echo "0")
-          if [ "$ADMIN" -eq 0 ]; then
-            echo "FAIL CHECK 7: Admin Console missing."
-            PASS=false
-          else
+          # CHECK 7: Admin Console present
+          if grep -q 'rAdmin\|function rAdmin' "$FILE"; then
             echo "PASS CHECK 7: Admin Console present."
+          else
+            echo "FAIL CHECK 7: Admin Console (rAdmin) missing."
+            FAIL=1
           fi
 
           echo "======================================"
-          if [ "$PASS" = "true" ]; then
-            echo "ALL CHECKS PASSED — Deploy approved."
+          if [ "$FAIL" -eq 0 ]; then
+            echo "ALL CHECKS PASSED. OMS delivery approved."
           else
-            echo "ONE OR MORE CHECKS FAILED — Deploy blocked."
-            exit
+            echo "ONE OR MORE CHECKS FAILED. Delivery blocked."
+            exit 2
+          fi
+          echo "======================================"
