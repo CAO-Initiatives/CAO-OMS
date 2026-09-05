@@ -20,6 +20,7 @@ import vm from 'node:vm';
 
 const FILE = process.argv[2] || 'oms.html';
 let pass = 0, fail = 0, todo = 0;
+let ctxAmb = null;
 
 const ok = (name, cond, detail = '') => {
   if (cond) { pass++; console.log('PASS  ' + name); }
@@ -153,11 +154,18 @@ if (typeof findPerson === 'function') {
   const r = q => { const p = findPerson(q); return p ? p.name : null; };
   ok('exact full name resolves', r('Ari Ball') === 'Ari Ball');
   ok('exact email resolves', r('Ariana.Ball@advocatehealth.org') === 'Ari Ball');
-  todoCheck('unique first name resolves ("Ari" -> Ari Ball)', r('Ari') === 'Ari Ball', 'returns null today');
-  todoCheck('display first name resolves ("Maggie" -> Maggie Scirica)', r('Maggie') === 'Maggie Scirica', 'returns null today');
-  todoCheck('EMAIL first name resolves ("Margaret" -> Maggie Scirica)', r('Margaret') === 'Maggie Scirica',
-            'returns null today — this is the Advocate name divergence');
-  todoCheck('surname resolves ("Scirica" -> Maggie Scirica)', r('Scirica') === 'Maggie Scirica', 'returns null today');
+  ok('unique first name resolves ("Ari" -> Ari Ball)', r('Ari') === 'Ari Ball');
+  ok('display first name resolves ("Maggie" -> Maggie Scirica)', r('Maggie') === 'Maggie Scirica');
+  ok('EMAIL first name resolves ("Margaret" -> Maggie Scirica)', r('Margaret') === 'Maggie Scirica',
+     'display names and email names diverge at Advocate; both must resolve');
+  ok('surname resolves ("Scirica" -> Maggie Scirica)', r('Scirica') === 'Maggie Scirica');
+  ok('a 1-2 char fragment does NOT prefix-match', r('A') === null, 'too loose a prefix would bind the wrong person');
+  const amb = G('ownerAmbiguity');
+  ok('ownerAmbiguity is defined', typeof amb === 'function');
+  if (typeof amb === 'function') {
+    ctxAmb = amb('Hossam/Maggie');
+    ok('ownerAmbiguity returns null for an unmatched string', amb('Nobody At All') === null);
+  }
   ok('an ambiguous two-person string does not silently resolve', r('Hossam/Maggie') === null,
      'it should raise a validation error; it must never pick one');
   ok('unknown name returns null, does not throw', r('Nobody At All') === null);
@@ -165,9 +173,20 @@ if (typeof findPerson === 'function') {
 
 const upsertSrc = typeof G('upsertPerson') === 'function' ? G('upsertPerson').toString() : '';
 ok('upsertPerson requires an email', /Email is required/.test(upsertSrc));
-todoCheck('upsertPerson guards against id collisions',
-          /while\s*\(|suffix|collision|uid\(\)/.test(upsertSrc),
-          'mints id:slug(name) with no suffix — two people who slug alike overwrite each other');
+ok('upsertPerson guards against id collisions',
+   /while\s*\(/.test(upsertSrc) && /some\(/.test(upsertSrc),
+   'must append a suffix when a slug is taken');
+
+// ---------------------------------------------------------------- 4b. new-person form (Rev 16)
+console.log('\n# Inline new-person form (Rev 16)');
+ok('the two chained prompts are gone', !/prompt\('New assignee name/.test(main));
+ok('inline form fields exist', /f_np_first/.test(html) && /f_np_last/.test(html) && /f_np_email/.test(html));
+ok('the form is inline, not a second modal',
+   /id="f_newperson"/.test(html) && !/openModal\([^)]*newperson/i.test(main),
+   'one overlay: a second modal would destroy the task being edited');
+ok('all three fields are required before save', /first name, last name and email are all required/i.test(main));
+ok('an existing email offers the existing person', /already on file for/i.test(main));
+ok('ambiguity blocks the save', /matches more than one person/i.test(main));
 
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
