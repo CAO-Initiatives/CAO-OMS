@@ -1,10 +1,20 @@
 name: OMS Release Gate Check
 
+# Broadened from oms.html only. The old trigger meant a change to the gate
+# itself, to index.html, to the preflight or to data/ ran no checks at all.
 on:
   push:
     branches: [main]
     paths:
       - 'oms.html'
+      - 'index.html'
+      - 'data/**'
+      - 'gate4_preflight.py'
+      - 'scripts/release_gate.sh'
+      - '.github/workflows/oms-guide-check.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   oms-release-gate:
@@ -17,89 +27,12 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Run OMS release gate checks
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run release gate
         run: |
-          echo "======================================"
-          echo "OMS RELEASE GATE — Delivery Checklist"
-          echo "======================================"
-
-          DIFF=$(git diff HEAD~1 HEAD -- oms.html)
-          PASS=true
-
-          CHANGED_LINES=$(echo "$DIFF" | grep -c "^+" || echo "0")
-          echo "Changed lines: $CHANGED_LINES"
-
-          if [ "$CHANGED_LINES" -gt 5 ]; then
-            GUIDE_CHANGED=$(echo "$DIFF" | grep -cE "^\+.*(guide-wrap|guide-hero|guide-sec|User Guide|Navigation:|Admin|Import|Tasks)" || echo "0")
-            if [ "$GUIDE_CHANGED" -eq 0 ]; then
-              echo "FAIL CHECK 1: Non-cosmetic change but User Guide NOT updated."
-              PASS=false
-            else
-              echo "PASS CHECK 1: User Guide updated."
-            fi
-          else
-            echo "PASS CHECK 1 SKIPPED: Cosmetic-only change."
-          fi
-
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          COMMIT_LEN=${#COMMIT_MSG}
-          if [ "$COMMIT_LEN" -lt 10 ]; then
-            echo "FAIL CHECK 2: Commit message too short."
-            PASS=false
-          else
-            echo "PASS CHECK 2: Commit message OK ($COMMIT_LEN chars)."
-          fi
-
-          VERSION=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' oms.html | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "NOT FOUND")
-          if [ "$VERSION" = "NOT FOUND" ]; then
-            echo "FAIL CHECK 3: Version badge missing."
-            PASS=false
-          else
-            echo "PASS CHECK 3: Version badge present ($VERSION)."
-          fi
-
-          # FIXED: count occurrences, not lines
-          SCRIPT_OPEN=$(grep -o "<script" oms.html | wc -l)
-          SCRIPT_CLOSE=$(grep -o "</script>" oms.html | wc -l)
-
-          if [ "$SCRIPT_OPEN" -ne "$SCRIPT_CLOSE" ]; then
-            echo "FAIL CHECK 4: Mismatched script tags ($SCRIPT_OPEN open, $SCRIPT_CLOSE close)."
-            PASS=false
-          else
-            echo "PASS CHECK 4: Script tags balanced ($SCRIPT_OPEN open, $SCRIPT_CLOSE close)."
-          fi
-
-          SHEETJS=$(grep -c "cdn.sheetjs.com" oms.html || echo "0")
-          if [ "$SHEETJS" -eq 0 ]; then
-            echo "FAIL CHECK 5: SheetJS CDN missing."
-            PASS=false
-          else
-            echo "PASS CHECK 5: SheetJS present."
-          fi
-
-          GATEWAY=$(grep -c "OMS_GATEWAY" oms.html || echo "0")
-          if [ "$GATEWAY" -eq 0 ]; then
-            echo "FAIL CHECK 6: OMS_GATEWAY missing."
-            PASS=false
-          else
-            echo "PASS CHECK 6: OMS_GATEWAY present."
-          fi
-
-          ADMIN=$(grep -c "rAdmin" oms.html || echo "0")
-          if [ "$ADMIN" -eq 0 ]; then
-            echo "FAIL CHECK 7: Admin Console missing."
-            PASS=false
-          else
-            echo "PASS CHECK 7: Admin Console present."
-          fi
-
-          echo "======================================"
-
-          if [ "$PASS" = "true" ]; then
-            echo "ALL CHECKS PASSED — Deploy approved."
-            echo "======================================"
-          else
-            echo "ONE OR MORE CHECKS FAILED — Deploy blocked."
-            echo "======================================"
-            exit 2
-          fi
+          chmod +x scripts/release_gate.sh
+          ./scripts/release_gate.sh HEAD~1
