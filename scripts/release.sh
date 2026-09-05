@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # OMS one-command release. Run from the repository root.
 #
-#   ./scripts/release.sh <minor> "<rev log summary>"
+#   ./scripts/release.sh <version> "<rev log summary>"
+#
+# <version> is the FULL semantic version, with or without the leading v:
+#   MAJOR  milestone or audience change   1.x pilot -> 2.0.0 Dean's Office go-live
+#   MINOR  planned release with user-visible change
+#   PATCH  hotfix between planned releases, no new capability
+#
+# The OMS_REV_LOG rev is a separate, immutable audit counter. It only ever
+# increments by one and never restarts, whatever the badge does.
 #
 # Example:
-#   ./scripts/release.sh 6 "Rev 16 (client). Owner resolution ladder and the
-#   First/Last/Email modal replacing two chained prompts. User Guide updated."
+#   ./scripts/release.sh 1.7.0 "Rev 17 (client). Retired task status and the
+#   ownerId backfill. User Guide updated."
+#   ./scripts/release.sh 2.0.0 "Rev 18. Dean's Office production go-live."
 #
 # Assumes oms.html has ALREADY been edited. This script owns the release
 # mechanics only: version badge, revision-log entry, verification, commit,
@@ -14,13 +23,15 @@
 # Nothing is pushed unless the local gate AND the smoke test both pass.
 set -euo pipefail
 
-MINOR="${1:-}"
+VERSION="${1:-}"
 SUMMARY="${2:-}"
 OMS=oms.html
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-[ -n "$MINOR" ] || die "usage: ./scripts/release.sh <minor> \"<summary>\""
+[ -n "$VERSION" ] || die "usage: ./scripts/release.sh <version> \"<summary>\"  e.g. 1.7.0 or 2.0.0"
+NEWVER="v${VERSION#v}"
+echo "$NEWVER" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "version must look like 1.7.0 or 2.0.0 (got '$VERSION')"
 [ -n "$SUMMARY" ] || die "a revision-log summary is required (the gate rejects releases without one)"
 [ -f "$OMS" ] || die "$OMS not found — run from the repository root"
 [ -f scripts/release_gate.sh ] || die "scripts/release_gate.sh not found"
@@ -33,8 +44,14 @@ git diff --quiet -- "$OMS" && die "$OMS has no uncommitted changes — nothing t
 
 OLDVER=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' "$OMS" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
 OLDREV=$(grep -oE "\{rev:[0-9]+," "$OMS" | grep -oE "[0-9]+" | head -1)
-NEWVER="v1.${MINOR}.0"
 NEWREV=$((OLDREV + 1))
+
+# Monotonic check up front, so a bad version fails before anything is edited.
+python3 - "$OLDVER" "$NEWVER" <<'PY' || die "version must increase: $OLDVER -> $NEWVER"
+import sys
+t=lambda v: tuple(int(x) for x in v.lstrip('v').split('.'))
+sys.exit(0 if t(sys.argv[2]) > t(sys.argv[1]) else 1)
+PY
 TODAY=$(date -u +%Y-%m-%d)
 
 echo "=============================================="
@@ -93,15 +110,20 @@ echo
 echo "---------- push ----------"
 git push origin "$BRANCH"
 
+git tag -a "$NEWVER" -m "Rev $NEWREV ($NEWVER): ${SUMMARY:0:90}"
+git push origin "$NEWVER"
+
 echo
 echo "=============================================="
-echo "RELEASED  $NEWVER   rev $NEWREV"
+echo "RELEASED  $NEWVER   rev $NEWREV   (tagged)"
 echo "  bytes    $BYTES"
 echo "  sha256   $SHA"
 echo "  commit   $(git rev-parse --short HEAD)"
 echo "=============================================="
 echo "Rollback baseline (previous production artifact):"
 git show "HEAD~1:$OMS" | sha256sum | sed 's/-$/(HEAD~1)/'
+PREVTAG=$(git tag --sort=-v:refname | sed -n 2p)
+[ -n "$PREVTAG" ] && echo "  or by tag:  ./scripts/rollback.sh $PREVTAG"
 echo
 echo "Watching CI. Ctrl-C is safe; the release is already pushed."
 if command -v gh >/dev/null 2>&1; then
