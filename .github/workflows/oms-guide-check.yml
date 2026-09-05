@@ -9,8 +9,9 @@ on:
       - 'oms.html'
       - 'index.html'
       - 'data/**'
+      - 'test/**'
+      - 'scripts/**'
       - 'gate4_preflight.py'
-      - 'scripts/release_gate.sh'
       - '.github/workflows/oms-guide-check.yml'
   pull_request:
     branches: [main]
@@ -36,3 +37,8 @@ jobs:
         run: |
           chmod +x scripts/release_gate.sh
           ./scripts/release_gate.sh HEAD~1
+
+      # The gate checks that the artifact is well FORMED. This checks that it
+      # BEHAVES. The gw/rob defect passed every gate check ever written.
+      - name: Behavioural smoke test
+        run: node test/smoke.mjs oms.html
