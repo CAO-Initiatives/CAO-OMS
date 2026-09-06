@@ -289,5 +289,11 @@
       "OMS_DIFF"
     ],
     "why": "Rev 44. An update used to send the whole record, so every key overlapped and consolidate.py raised a same-field conflict for ANY two edits to one record - reproduced: A edits the title, B edits the notes, B is rejected and B's note is gone. If this ever reverts to sending the whole record the guide must stop promising concurrent edits work, because they will not."
+  },
+  {
+    "id": "external-script-is-pinned",
+    "code": "integrity=\"sha384-",
+    "requires_text": "the one piece of code OMS loads from anywhere but itself",
+    "why": "Rev 45. SheetJS is the only external script, it runs with full access to the page including the session token in sessionStorage, and it was loaded with no integrity attribute - so a compromise of that CDN or of DNS in front of it would have read every signed-in user's credential silently. If the pin is ever dropped, the sentence saying the spreadsheet reader is verified must go with it. Recompute the hash when the version changes; the browser refuses to run anything that does not match."
   }
 ]
