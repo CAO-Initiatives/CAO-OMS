@@ -32,8 +32,11 @@
  const TOKEN_KEY='cao_oms_session'; const USER_KEY='cao_oms_user';
  const form=document.getElementById('loginForm'),btn=document.getElementById('signIn'),pw=document.getElementById('password'),err=document.getElementById('error'),ok=document.getElementById('success');
  const changeForm=document.getElementById('changeForm'),changeBtn=document.getElementById('changeBtn'),newPw=document.getElementById('newPw'),newPw2=document.getElementById('newPw2');
- /* OMS-046. Initial passwords are <lastname>-OMS-2026!, which anyone who
-    knows the pattern can guess. The forced change is therefore the control
+ /* OMS-046. Initial passwords follow a predictable form derived from the
+    person's name, so they are guessable by anyone who works out the shape.
+    The shape is deliberately NOT written here: this file is served from a
+    public repository, and spelling it out next to a live sign-in form turned
+    a weak password into a published one. Rev 43 removed it. The forced change is therefore the control
     that makes the scheme safe, not a nicety, so it blocks entry to OMS
     rather than nagging. The current password is held in memory only for the
     length of this exchange - the gateway requires it, so that a stolen
