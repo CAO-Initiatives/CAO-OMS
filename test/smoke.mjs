@@ -1427,6 +1427,58 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   const soon = G('sopsDueSoon');
   ok('sopsDueSoon is defined', typeof soon === 'function');
 
+  // Rev 46 (OMS-047). "Defined" was the ONLY thing asserted about sopsDueSoon,
+  // and an orphan satisfies it: the function shipped in Rev 34 and was called
+  // from nowhere for twelve revisions while the guide described the feature.
+  // Assert the call chain, not the existence.
+  const card = G('sopReviewCard');
+  ok('sopReviewCard is defined', typeof card === 'function');
+  ok('OMS-047: the dashboard is what renders the SOP review card',
+     /sopReviewCard\(\)/.test(String(G('rDash') || '')));
+  ok('OMS-047: the card is what calls sopsDueSoon',
+     /sopsDueSoon\(/.test(String(card || '')));
+  if (typeof soon === 'function' && typeof card === 'function') {
+    const savedST = T.st;
+    const three = [
+      { id: 's1', process: 'Overdue one', owner: 'Maggie', reviewDue: '2020-01-01', notes: '' },
+      { id: 's2', process: 'Far future', owner: 'Ari', reviewDue: '2099-01-01', notes: '' },
+      { id: 's3', process: 'No date', owner: 'Hossam', reviewDue: '', notes: 'renewal paperwork' },
+    ];
+    ok('the harness can substitute ST', T.setST({ ...(savedST || {}), sops: three }) === true);
+    const picked = soon(30).map(s => s.id);
+    ok('sopsDueSoon returns a review date already past', picked.indexOf('s1') !== -1);
+    ok('sopsDueSoon excludes a date beyond the window', picked.indexOf('s2') === -1);
+    ok('sopsDueSoon excludes a record carrying no review date', picked.indexOf('s3') === -1);
+    const withDue = card();
+    ok('the card names the lapsed procedure and flags it',
+       /Overdue one/.test(withDue) && /Overdue/.test(withDue));
+    T.setST({ ...(savedST || {}), sops: [three[2]] });
+    const empty = card();
+    ok('OMS-047: with no review date anywhere the card says so rather than vanishing',
+       /No SOP has a review date yet/.test(empty) && /class="card"/.test(empty));
+    T.setST({ ...(savedST || {}), sops: [three[1]] });
+    ok('with every date beyond the window the card says that instead',
+       /more than 30 days away/.test(card()));
+    T.setST(savedST);
+  }
+
+  // OMS-028: the search must read what the table puts on screen.
+  const hay = G('sopHaystack');
+  ok('sopHaystack is defined', typeof hay === 'function');
+  if (typeof hay === 'function') {
+    const s = { process: 'Annual Report', owner: 'Hossam', notes: 'signed off by Rachel' };
+    ok('OMS-028: the haystack carries the notes, which the table renders',
+       hay(s).indexOf('rachel') !== -1);
+    ok('the haystack still carries process and owner',
+       hay(s).indexOf('annual report') !== -1 && hay(s).indexOf('hossam') !== -1);
+    ok('a match cannot span the seam between two fields',
+       hay({ process: 'Annual', owner: 'Report' }).indexOf('annualreport') === -1);
+    ok('a missing field does not become the literal word undefined',
+       hay({ process: 'Annual Report' }).indexOf('undefined') === -1);
+    ok('OMS-028: the SOPs table filters through sopHaystack',
+       /sopHaystack\(/.test(String(G('rSOPs') || '')));
+  }
+
   // OMS-029: logging is inline in the queue, because a second modal would
   // destroy the first - the rule that put the new-person form in the task dialog.
   const notif = String(G('openNotificationsModal') || '');

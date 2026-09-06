@@ -168,6 +168,33 @@
     ]
   },
   {
+    "id": "sop-reviews-reach-the-dashboard",
+    "code": "function sopReviewCard(",
+    "requires_text": "SOP Reviews Due",
+    "why": "OMS-047. The card is the only place a lapsed SOP review is visible to somebody who is not already on the SOPs tab, and the guide now promises it on the Dashboard. reachable_from names rDash because that promise is what an orphan would silently break.",
+    "reachable_from": [
+      "rDash"
+    ]
+  },
+  {
+    "id": "sop-review-lookahead-is-reachable",
+    "code": "function sopsDueSoon(",
+    "requires_text": "due within the next 30 days",
+    "why": "OMS-047, and the reason this binding exists at all. sopsDueSoon shipped in Rev 34 and was called from NOWHERE until Rev 46: dead code behind a described feature. The whole gate missed it - the smoke suite asserted only that it was defined, which an orphan satisfies, and check 12 was watching sopReviewCell instead. Chaining reachable_from to sopReviewCard, which is itself chained to rDash, is what makes the next orphan at either level fail.",
+    "reachable_from": [
+      "sopReviewCard"
+    ]
+  },
+  {
+    "id": "sop-search-covers-notes",
+    "code": "function sopHaystack(",
+    "requires_text": "Searching SOPs reads the notes too",
+    "why": "OMS-028. The SOPs table renders notes in a column of their own, so a search that does not read them fails on a word the user can see on screen. If the haystack is ever narrowed back to process and owner, the sentence promising otherwise has to go with it.",
+    "reachable_from": [
+      "rSOPs"
+    ]
+  },
+  {
     "id": "attributed-notes-are-described",
     "code": "function omsAppendNote(",
     "requires_text": "Notes are added to, not typed over",

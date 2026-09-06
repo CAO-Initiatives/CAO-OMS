@@ -159,6 +159,21 @@ def _symbol_for(binding):
 
 def main():
     global checked
+    # Rev 46. This script has always checked the repository's own oms.html and
+    # manifest, and until now it SILENTLY IGNORED anything passed on the command
+    # line. Running it as `text_claims.py some-modified-copy.html` therefore
+    # reported on the unmodified artifact and printed a pass - which is exactly
+    # how a negative control written to prove a new binding bites reported that
+    # it did not. Refuse the argument rather than ignore it: a probe that lies
+    # about what it measured is worse than no probe, and this repository has
+    # already been bitten by that shape once, when `grep -c \r` called every
+    # file CRLF.
+    if len(sys.argv) > 1:
+        print("FAIL  text_claims.py takes no arguments - it always checks the repository's")
+        print("      own oms.html against test/text-claims.json. To check a MODIFIED copy,")
+        print("      mirror scripts/, test/ and oms.html into a scratch tree and run the")
+        print("      copy of this script from there.")
+        return 1
     if not ARTIFACT.exists():
         print("FAIL  oms.html not found"); return 1
     if not MANIFEST.exists():
