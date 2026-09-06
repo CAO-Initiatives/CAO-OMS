@@ -17,6 +17,12 @@
 <label for="password">OMS Password</label><input id="password" type="password" autocomplete="current-password" required>
 <button id="signIn" type="submit">Sign In</button>
 </form>
+<form id="changeForm" style="display:none">
+<p id="changeIntro">This password was issued to you and is known to whoever issued it. Choose a new one before continuing.</p>
+<label for="newPw">New password</label><input id="newPw" type="password" autocomplete="new-password" required minlength="12">
+<label for="newPw2">Confirm new password</label><input id="newPw2" type="password" autocomplete="new-password" required minlength="12">
+<button id="changeBtn" type="submit">Set new password</button>
+</form>
 <div id="error" class="msg error" role="alert"></div><div id="success" class="msg success" role="status"></div>
 <div class="foot">Passwords are not stored in this browser. Closing the tab clears the temporary session.</div>
 </main>
@@ -25,9 +31,47 @@
  const GATEWAY='https://cao-oms-gateway.vercel.app';
  const TOKEN_KEY='cao_oms_session'; const USER_KEY='cao_oms_user';
  const form=document.getElementById('loginForm'),btn=document.getElementById('signIn'),pw=document.getElementById('password'),err=document.getElementById('error'),ok=document.getElementById('success');
+ const changeForm=document.getElementById('changeForm'),changeBtn=document.getElementById('changeBtn'),newPw=document.getElementById('newPw'),newPw2=document.getElementById('newPw2');
+ /* OMS-046. Initial passwords are <lastname>-OMS-2026!, which anyone who
+    knows the pattern can guess. The forced change is therefore the control
+    that makes the scheme safe, not a nicety, so it blocks entry to OMS
+    rather than nagging. The current password is held in memory only for the
+    length of this exchange - the gateway requires it, so that a stolen
+    session alone cannot lock the real owner out of their own account. */
+ let pendingPassword='';
+ function showChange(){form.style.display='none';changeForm.style.display='';newPw.focus()}
  const message=(el,text)=>{err.style.display='none';ok.style.display='none';el.textContent=text;el.style.display='block'};
- async function validateExisting(){const token=sessionStorage.getItem(TOKEN_KEY);if(!token)return;try{const r=await fetch(GATEWAY+'/api/state',{headers:{Authorization:'Bearer '+token}});if(r.ok){location.replace('./oms.html');return}}catch(e){}sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(USER_KEY)}
- form.addEventListener('submit',async e=>{e.preventDefault();err.style.display=ok.style.display='none';btn.disabled=true;btn.textContent='Signing in...';try{const r=await fetch(GATEWAY+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:document.getElementById('userId').value.trim(),password:pw.value})});const text=await r.text();let data;try{data=JSON.parse(text)}catch{throw new Error('The sign-in service returned an unexpected response.')}if(!r.ok||!data.token)throw new Error(r.status===401?'Incorrect credentials.':'Sign-in service unavailable.');sessionStorage.setItem(TOKEN_KEY,data.token);sessionStorage.setItem(USER_KEY,JSON.stringify(data.user||{}));pw.value='';message(ok,'Access granted. Opening OMS...');location.replace('./oms.html')}catch(ex){pw.value='';message(err,ex.message||'Sign-in failed.');pw.focus()}finally{btn.disabled=false;btn.textContent='Sign In'}});
+ async function validateExisting(){const token=sessionStorage.getItem(TOKEN_KEY);if(!token)return;
+  /* A session that predates the change must not be a way around it. */
+  let stored={};try{stored=JSON.parse(sessionStorage.getItem(USER_KEY)||'{}')}catch(e){}
+  if(stored&&stored.mustChangePassword===true){message(err,'Your password must be changed before you can continue. Sign in again to set it.');sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(USER_KEY);return}
+  try{const r=await fetch(GATEWAY+'/api/state',{headers:{Authorization:'Bearer '+token}});if(r.ok){location.replace('./oms.html');return}}catch(e){}
+  sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(USER_KEY)}
+ form.addEventListener('submit',async e=>{e.preventDefault();err.style.display=ok.style.display='none';btn.disabled=true;btn.textContent='Signing in...';try{const r=await fetch(GATEWAY+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:document.getElementById('userId').value.trim(),password:pw.value})});const text=await r.text();let data;try{data=JSON.parse(text)}catch{throw new Error('The sign-in service returned an unexpected response.')}if(!r.ok||!data.token)throw new Error(r.status===401?'Incorrect credentials.':'Sign-in service unavailable.');sessionStorage.setItem(TOKEN_KEY,data.token);sessionStorage.setItem(USER_KEY,JSON.stringify(data.user||{}));
+   if(data.user&&data.user.mustChangePassword===true){pendingPassword=pw.value;pw.value='';showChange();message(ok,'Signed in. Set a new password to continue.');return}
+   pw.value='';message(ok,'Access granted. Opening OMS...');location.replace('./oms.html')}catch(ex){pw.value='';message(err,ex.message||'Sign-in failed.');pw.focus()}finally{btn.disabled=false;btn.textContent='Sign In'}});
+ changeForm.addEventListener('submit',async e=>{
+  e.preventDefault();err.style.display=ok.style.display='none';
+  if(newPw.value!==newPw2.value){message(err,'The two passwords do not match.');newPw2.focus();return}
+  if(newPw.value.length<12){message(err,'Use at least 12 characters.');newPw.focus();return}
+  if(newPw.value===pendingPassword){message(err,'Choose a password different from the one you were issued.');newPw.focus();return}
+  changeBtn.disabled=true;changeBtn.textContent='Saving...';
+  try{
+   const token=sessionStorage.getItem(TOKEN_KEY);
+   const r=await fetch(GATEWAY+'/api/password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({currentPassword:pendingPassword,newPassword:newPw.value})});
+   const text=await r.text();let data;try{data=JSON.parse(text)}catch{throw new Error('The sign-in service returned an unexpected response.')}
+   if(!r.ok)throw new Error(data&&data.error?String(data.error):'Could not set the new password.');
+   /* The stored user still says the change is pending, and the session was
+      minted before it. Clear both and make them sign in with the new
+      password - that also proves it works before they depend on it. */
+   pendingPassword='';newPw.value=newPw2.value='';
+   sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(USER_KEY);
+   changeForm.style.display='none';form.style.display='';
+   message(ok,'Password changed. Sign in with your new password.');
+   document.getElementById('userId').focus();
+  }catch(ex){message(err,ex.message||'Could not set the new password.')}
+  finally{changeBtn.disabled=false;changeBtn.textContent='Set new password'}
+ });
  validateExisting();
 })();
 </script>
