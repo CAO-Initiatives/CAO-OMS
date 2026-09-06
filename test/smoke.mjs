@@ -1214,6 +1214,58 @@ ok('the task dialog shows history inline, not in a second overlay',
 ok('the Admin Console carries the full history', /Assignment History/.test(main));
 ok('the attribution stamp reaches the task dialog', /recordStamp\(/.test(main));
 
+
+// ================================================================ REV 26
+// A guide that matches the reader's access level, and one sign-off on every
+// draft. The render harness covers these more thoroughly; these are the ones
+// worth blocking a release over.
+
+console.log('\n# One guide per access level (OMS-044)');
+const guideOf = role => {
+  T.fn("OMS_USER={role:'" + role + "'}");
+  T.fn('_guideHtml=null'); T.fn('_guideRole=null');
+  T.fn('rGuide()');
+  return ELS['guide'] ? ELS['guide'].innerHTML : '';
+};
+if (typeof G('guideFor') === 'function') {
+  T.setST({ events: [], tasks: [], people: [], sops: [], gw: [], rob: [], incoming: [], agendas: [],
+            board: [], deadlines: [], forReview: [], fyis: [], assignments: [], notifications: [],
+            assignmentHistory: [] });
+  const viewer = guideOf('viewer'), editor = guideOf('editor'), admin = guideOf('admin');
+  ok('all three guides render', viewer.length > 800 && editor.length > 800 && admin.length > 800);
+  ok('they are three different documents', viewer !== editor && editor !== admin && viewer !== admin);
+  ok('viewer is shortest, admin longest', viewer.length < editor.length && editor.length < admin.length,
+     viewer.length + ' < ' + editor.length + ' < ' + admin.length);
+  // The point of the split: a read-only guide must not teach steps its reader
+  // will be refused when they try them.
+  ok('the read-only guide does not teach editing or recovery',
+     !/Sync pending|Unsynced|Admin Console|Hard delete/.test(viewer),
+     'a viewer can never cause a save, so save-recovery advice is worse than noise');
+  ok('the read-only guide still says what the account CAN do',
+     /read-only/i.test(viewer) && /print/i.test(viewer) && /cannot add, edit or delete/i.test(viewer));
+  ok('the editor guide covers what an editor does',
+     ['Sync pending', 'Unsynced', 'Waiting on', 'Remind', 'Retired'].every(t => editor.includes(t)));
+  ok('the editor guide omits the Admin Console', !editor.includes('Admin Console'));
+  ok('the admin guide keeps the full technical detail',
+     ['Admin Console', 'Hard delete', 'Records with no id', 'Revision Log'].every(t => admin.includes(t)));
+  ok('the cache is keyed on role, not global',
+     guideOf('viewer') === viewer && guideOf('admin') === admin,
+     'a global cache would serve one role the other role guide');
+}
+
+console.log('\n# One sign-off on every draft (OMS-031, DEC-016)');
+const signoff = G('OMS_MAIL_SIGNOFF');
+ok('the sign-off exists', typeof signoff === 'string' && signoff.length > 40);
+if (typeof signoff === 'string') {
+  ok('it identifies CAO-OMS as the sender', /CAO-OMS/.test(signoff));
+  ok('it carries the agreed Reply-To', /hossam\.elsaie@advocatehealth\.org/.test(signoff),
+     'DEC-016. The From name belongs to the mailbox and cannot be set from a compose deeplink, so the body carries it');
+  ok('it still says the message was machine-generated',
+     /generated from the CAO Operations Management System/.test(signoff));
+}
+ok('assignment, handoff and reminder drafts all use it',
+   (main.match(/OMS_MAIL_SIGNOFF/g) || []).length >= 4);
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
