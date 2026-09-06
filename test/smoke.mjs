@@ -1970,6 +1970,44 @@ console.log('\n# The reconciler, executed (Rev 36)');
   ok('...and the full fold is', h5.run(`globalThis.__b`) === 'Connected',
      'banner=' + h5.run(`globalThis.__b`));
 
+  // ---- Rev 41: a 403 is not an expired session
+  // OMS_POST reported EVERY 403 as auth:true, so a read-only account trying to
+  // save was told its session had expired - false, and signing in again would
+  // change nothing. The gateway's password-change refusal (OMS-053) would have
+  // been reported the same way, or worse, fallen through to the generic
+  // Unsynced wording that says to press Save again.
+  for (const [label, status, body, expect] of [
+    ["a read-only refusal", 403, '{"error":"read_only"}', "Read only"],
+    ["a password-change refusal", 403, '{"error":"Set a new password before changing shared data. Sign out and sign in again - OMS will ask you for one.","code":"password_change_required"}', "Password change required"],
+    ["a genuine 401", 401, '{"error":"Session expired or invalid"}', "Authentication required"],
+  ]) {
+    const h = build();
+    h.run(`OMS_POST_STATUS=${status}; OMS_POST_BODY=${JSON.stringify(body)};`);
+    // Re-point fetch at a refusing gateway for the operation endpoint only.
+    h.run(`(function(){const f=fetch;globalThis.fetch=async(u,o)=>{
+      if(String(u).endsWith('/api/operation'))return{ok:false,status:OMS_POST_STATUS,text:async()=>OMS_POST_BODY};
+      return f(u,o)};})()`);
+    h.run(`ST.tasks[0].title='Blocked edit';_dirty.add('tasks');`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(5000);
+    try { await p; } catch (_) {}
+    ok(`${label} reports "${expect}"`, h.run(`globalThis.__b`) === expect,
+       'banner=' + h.run(`globalThis.__b`));
+    if (status === 403) {
+      ok(`${label} does not start the reconciler - waiting cannot fix it`,
+         h.timers.size === 0, h.timers.size + ' timers pending');
+      ok(`${label} leaves the edit on screen`,
+         h.run(`ST.tasks[0].title`) === 'Blocked edit', h.run(`ST.tasks[0].title`));
+    }
+  }
+  {
+    const h = build();
+    const src = h.run(`String(OMS_POST)`);
+    ok('the password-change branch keys off the gateway code, not its wording',
+       /code===.password_change_required./.test(src),
+       'prose changes whenever somebody improves it; the code does not');
+  }
+
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();
   h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);

@@ -256,5 +256,20 @@
     "code": "function OMS_TOKEN(){return sessionStorage.getItem(OMS_TOKEN_KEY)",
     "requires_text": "It does not end a session that is already open",
     "why": "OMS-050. Bound to the client's session accessor because check 12 reads only oms.html, and the mechanism this describes lives in the gateway: requireSession verifies the signed token and returns the role FROM IT, never reading auth/users.json, and there is no jti, token version or denylist anywhere in CAO-OMS-Gateway. So disabling, deleting or demoting an account changes nothing for a session already in progress, for up to the eight hours the token is minted for. The guide said Disable sign-in 'blocks access', which an administrator handling a departure would reasonably read as access ending now. This binding holds the sentence to the fact that a bearer token held in sessionStorage IS the client's whole credential: if per-request revocation is ever added at the gateway, this text has to be revisited at the same time."
+  },
+  {
+    "id": "refused-save-says-which-refusal",
+    "code": "code==='password_change_required'",
+    "requires_text": "A refused save now says why",
+    "reachable_from": [
+      "OMS_POST"
+    ],
+    "why": "Rev 41. OMS_POST reported EVERY 403 as auth:true, so a read-only account trying to save was told its session had expired - false, and signing in again would have changed nothing. If the branch is ever collapsed back into a single 403 case, the guide sentence promising a specific reason has to go with it."
+  },
+  {
+    "id": "initial-password-blocks-writes",
+    "code": "e.mustChange",
+    "requires_text": "sign out and sign in again",
+    "why": "Rev 41 / gateway OMS-053. The forced password change is now refused at the write path rather than only by the client, and the control that clears it lives on the sign-in page, not inside the application. Somebody already signed in therefore has to sign out and back in, and the guide is the only place that says so. If enforcement is ever removed, this instruction must go too - it would be telling people to do something with no purpose."
   }
 ]
