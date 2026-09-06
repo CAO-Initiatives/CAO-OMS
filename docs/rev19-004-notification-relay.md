@@ -1,8 +1,25 @@
 # REV19-004 — Power Automate notification relay
 
-**Status:** designed, not deployed. Deploying it needs an M365 session that this
-repository's tooling does not have. Everything below is ready to hand to whoever
-has one; the OMS and gateway changes are specified exactly and are small.
+**Status:** designed, and the primary design is BLOCKED ON LICENSING. Tested in
+the tenant on 6 Sept 2026: saving a flow whose trigger is *When an HTTP request
+is received* returns
+
+> This flow's owner needs a Power Automate Premium license.
+> This flow includes premium capabilities that require a Power Automate Premium license.
+
+The test flow was refused and never created (My flows is empty), so nothing was
+left behind. **This tenant does not have Power Automate Premium.**
+
+Read from the connector gallery in the same session: **Office 365 Outlook and
+GitHub are standard tier; every HTTP connector is premium.** That rules out both
+halves of the design below — the HTTP *trigger* and the HTTP *action*.
+
+The gateway-triggered design in this document remains the right one **if a
+Premium license is obtained**, and it is written up in full because that is a
+live option: it is one per-user license for whoever owns the flow, and it is the
+only option that keeps the trigger URL out of a public static file. If no license
+is bought, see **Options without Premium** at the end, which is where the
+decision now sits.
 
 **Acceptance criteria (from the register):** *An assignment notification reaches
 the owner without a manual draft step.*
@@ -202,3 +219,44 @@ exactly one collection.
 7. Unset `OMS_RELAY_URL` and confirm saves still succeed and notifications still
    appear with their draft links — that is the rollback path, and it should be
    exercised once deliberately rather than discovered during an incident.
+
+
+---
+
+## Options without Premium
+
+Established 6 Sept 2026. Standard-tier connectors available: **Office 365
+Outlook**, **GitHub**, and the schedule/recurrence trigger. Not available: every
+HTTP connector, trigger and action alike.
+
+**A. Buy one Power Automate Premium license for the flow owner.** Roughly the
+cost of a per-user add-on, and the design above then works unchanged. It is the
+only option where the trigger URL never touches `oms.html`, and the only one
+that needs no new credential stored outside the gateway. Recommended if the cost
+is acceptable, because every alternative trades security or reliability for it.
+
+**B. Drive the flow from the GitHub connector (standard).** The data repository
+already receives a commit for every operation, so a GitHub-connector trigger on
+that repository could fire the send without any HTTP action. **Needs one thing
+verified before it can be recommended:** whether the connector's available
+operations actually cover reading the notification content — its action set is
+oriented around issues, pull requests and workflows rather than arbitrary file
+content. If they do not, the notification body would have to be carried in
+something the connector *can* read, which starts bending the data model around a
+licensing constraint. It also puts a GitHub credential inside Power Automate,
+which the primary design deliberately avoided.
+
+**C. Send from the consolidator workflow instead, and drop Power Automate.**
+GitHub Actions can send mail directly with Microsoft Graph or SMTP credentials
+held as repository secrets. No license, no connector. The cost is that mail
+delivery becomes coupled to the workflow that OPS-025 has just shown to be the
+least reliable link in the chain, and it puts mail-sending credentials in the
+data repository, which currently holds none and has no release gate (OPS-001).
+
+**D. Keep the manual draft step.** It works today, every notification in
+canonical was delivered this way, and the only thing it costs is that a person
+must be at a desk. Legitimate as a deliberate choice rather than a default.
+
+The decision is A versus D, with B worth checking only if A is refused and D is
+unacceptable. C is listed for completeness and is not recommended while OPS-025
+and OPS-001 are open.
