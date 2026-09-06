@@ -1295,6 +1295,28 @@ if (typeof G('notificationSubject') === 'function') {
      /return omsSubject\(/.test(G('notificationSubject').toString()));
 }
 
+
+// ================================================================ REV 30
+console.log('\n# Sign-in accounts in the Admin Console (OMS-048)');
+ok('the account endpoint is called, not canonical state', /\/api\/users/.test(main),
+   'sign-in accounts live in the gateway; ST.people is the directory');
+ok('the client never asks for a salt or hash', !/\.salt\b/.test(main) && !/\baccounts\[[^\]]*\]\.hash/.test(main));
+ok('an account list is cached and refreshable', /omsLoadAccounts\(/.test(main) && /OMS_ACCOUNTS/.test(main));
+ok('accounts are matched to people by email', /omsAccountFor\(/.test(main));
+// The trap this release exists to avoid: a directory flag that reads as revoked
+// access while the person can still sign in.
+ok('deactivating also blocks the sign-in', /omsToggleSignIn\(/.test(main));
+ok('removing somebody removes their sign-in too', /omsRemoveSignIn\(/.test(main));
+ok('the password dialog is a modal, not a prompt', /openAccountModal\(/.test(main) && !/prompt\(['"]Password/.test(main));
+ok('a reset re-arms the forced change on the server, not the client',
+   !/mustChangePassword\s*[:=]\s*true/.test(main),
+   'the client must not be able to clear or set that flag; only the gateway writes it');
+ok('the guide no longer says the console cannot issue a password',
+   !/Issuing a new temporary password is not something the Admin Console can do/.test(html),
+   'Rev 29 said that truthfully; Rev 30 made it false');
+ok('the guide explains the lockout guards',
+   /cannot disable or delete your own account/i.test(html) && /last active/i.test(html));
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
