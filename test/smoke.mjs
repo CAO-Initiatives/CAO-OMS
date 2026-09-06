@@ -1408,9 +1408,65 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
        !/fills this in automatically/.test(prose));
     ok('OMS-041: the form says plainly that cadence is set by hand',
        /Nothing fills this in for you/.test(prose));
-    ok('OMS-041: and warns that re-importing a source clears it',
-       /replaces every event for that source/.test(prose));
+    ok('OMS-041: and says cadence is carried forward through a re-import',
+       /carried forward/.test(prose));
   }
+
+  // Rev 48 (OMS-041). Cadence had no route onto the 248 events lacking it. The
+  // workbooks carry no cadence column, and a source replacement rebuilt every
+  // row from the workbook, so a hand-ticked box was erased by the next import.
+  const derive = G('omsDeriveCadence');
+  const cadFor = G('omsCadenceFor');
+  ok('omsDeriveCadence is defined', typeof derive === 'function');
+  ok('omsCadenceFor is defined', typeof cadFor === 'function');
+  if (typeof derive === 'function') {
+    ok('a Weekly Series title reads as standing', derive('Academic Cabinet Meeting | Weekly Series'));
+    ok('a Quarterly title reads as standing', derive('Steering Committee | Quarterly Meeting'));
+    ok('a MONTHLY title reads as standing, whatever the case',
+       derive("DEAN'S LEADERSHIP MEETINGS (MONTHLY): Research Plan"));
+    ok('bi-weekly is caught with and without the hyphen',
+       derive('Ops sync bi-weekly') && derive('Ops sync biweekly'));
+    // The false positives that made title-derivation worth constraining: every
+    // one of these is a real row in the live Ari workbook.
+    ok('OMS-041: an ANNUAL event is not standing - a gala is a one-off',
+       !derive('Annual Match Day celebration') && !derive('Emeriti Faculty Holiday Brunch'));
+    ok('OMS-041: a named lecture series is not standing',
+       !derive('President’s Leadership Series – Wake Forest University'));
+    ok('a word merely containing a cadence word does not match',
+       !derive('Biweeklyish') && !derive('Semimonthlyish'));
+    ok('an empty or missing title is not standing', !derive('') && !derive(null));
+  }
+  if (typeof cadFor === 'function') {
+    const savedST = T.st;
+    T.setST({ ...(savedST || {}), events: [
+      { id: 'e1', source: 'Ari', title: 'Chairs Meeting', date: '2026-10-01', recurring: true },
+      { id: 'e2', source: 'Ari', title: 'One Off Thing', date: '2026-10-02', recurring: false },
+    ] });
+    const carried = cadFor({ title: 'Chairs Meeting', date: '2026-10-01' }, 'Ari');
+    ok('OMS-041: cadence already in OMS is carried forward through a re-import',
+       carried.on === true && /already in OMS/.test(carried.why));
+    ok('and a row previously marked NOT standing stays that way',
+       cadFor({ title: 'One Off Thing', date: '2026-10-02' }, 'Ari').on === false);
+    const derived = cadFor({ title: 'Cabinet | Weekly Series', date: '2026-10-03' }, 'Ari');
+    ok('an unseen row falls through to the title', derived.on === true && /from the title/.test(derived.why));
+    ok('a plain unseen row is not standing',
+       cadFor({ title: 'DEAC Gala', date: '2026-10-04' }, 'Ari').on === false);
+    // What the importer sets on the row beats both, in either direction.
+    ok('OMS-041: an explicit choice in the preview overrides the carry-forward',
+       cadFor({ title: 'Chairs Meeting', date: '2026-10-01', _cadence: false }, 'Ari').on === false);
+    ok('...and overrides the title',
+       cadFor({ title: 'DEAC Gala', date: '2026-10-04', _cadence: true }, 'Ari').on === true);
+    ok('carry-forward is scoped to the same source',
+       cadFor({ title: 'Chairs Meeting', date: '2026-10-01' }, 'Maggie').on === false);
+    T.setST(savedST);
+  }
+  const prev = String(G('showImportPreview') || '');
+  ok('OMS-041: the import preview shows a Cadence column', /<th>Cadence<\/th>/.test(prev));
+  ok('OMS-041: and computes it through omsCadenceFor', /omsCadenceFor\(/.test(prev));
+  ok('OMS-041: every row can be marked or unmarked in the preview',
+     /toggleImportCadence\(/.test(prev) && typeof G('toggleImportCadence') === 'function');
+  ok('OMS-041: the import writes cadence onto the replacement events',
+     /recurring:omsCadenceFor\(/.test(String(G('confirmImport') || '')));
 
   // OMS-015: an appended note must never destroy what is already there.
   const append = G('omsAppendNote');

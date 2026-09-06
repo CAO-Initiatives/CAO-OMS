@@ -178,6 +178,25 @@
     "symbol": "f_recurring"
   },
   {
+    "id": "cadence-carries-through-a-reimport",
+    "code": "function omsCadenceFor(",
+    "requires_text": "carried forward",
+    "why": "OMS-041. Before Rev 48 a source replacement rebuilt every row from the workbook, so cadence ticked by hand was erased by the next import and nothing said so. Both the Event form and the guide now promise it survives; reachable_from names the preview AND confirmImport because a promise that holds on screen but not at the write path is the worse half to lose.",
+    "reachable_from": [
+      "showImportPreview",
+      "confirmImport"
+    ]
+  },
+  {
+    "id": "cadence-is-shown-before-it-is-written",
+    "code": "function toggleImportCadence(",
+    "requires_text": "import preview shows what it worked out",
+    "why": "OMS-041. Deriving cadence from a title is inference, and the standing posture for inference in this importer is crossSourceDuplicates: report it, require confirmation, never resolve silently. The toggle is what makes the derived value a proposal rather than a decision, so if it stops being reachable from the preview the text promising it must go too.",
+    "reachable_from": [
+      "showImportPreview"
+    ]
+  },
+  {
     "id": "no-calendar-sync-may-be-claimed",
     "text": "sync populates this field",
     "requires_code": "OMS_OUTLOOK_SYNC",
