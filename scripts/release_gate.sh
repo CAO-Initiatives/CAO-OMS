@@ -52,15 +52,25 @@ else
 fi
 
 # ---------- 4. inline JavaScript parses ----------
-python3 - "$OMS" <<'PY' > /tmp/_inline.js
+# PYTHONIOENCODING is not optional. The artifact contains non-ASCII characters
+# (there is a U+2194). Without it, Python's stdout defaults to the system
+# codepage on Windows, the extraction dies mid-print, NOTHING is flushed, and
+# `node --check` then cheerfully parses a ZERO-BYTE file and reports success.
+# This check silently proved nothing on Windows until 5 Sept 2026. The size
+# guard is the real fix: a failed extraction must never look like a clean parse.
+rm -f /tmp/_inline.js
+PYTHONIOENCODING=utf-8 python3 - "$OMS" <<'PY' > /tmp/_inline.js
 import re, sys
 s = open(sys.argv[1], encoding='utf-8').read()
 blocks = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>', s, re.S)
 sys.stderr.write("inline blocks: %d\n" % len(blocks))
 print('\n;\n'.join(blocks))
 PY
-if node --check /tmp/_inline.js 2>/tmp/_nodeerr; then
-  pass "4 inline JavaScript parses (node --check)"
+INLINE_BYTES=$(wc -c < /tmp/_inline.js 2>/dev/null | tr -d ' ' || echo 0)
+if [ "${INLINE_BYTES:-0}" -lt 1000 ]; then
+  fail "4 inline JavaScript could not be extracted (${INLINE_BYTES:-0} bytes) - this check proves nothing"
+elif node --check /tmp/_inline.js 2>/tmp/_nodeerr; then
+  pass "4 inline JavaScript parses (node --check, $INLINE_BYTES bytes)"
 else
   fail "4 inline JavaScript is a syntax error: $(head -3 /tmp/_nodeerr | tr '\n' ' ')"
 fi

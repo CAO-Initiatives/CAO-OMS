@@ -42,8 +42,17 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 git diff --quiet -- "$OMS" && die "$OMS has no uncommitted changes — nothing to release"
 
-OLDVER=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' "$OMS" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
-OLDREV=$(grep -oE "\{rev:[0-9]+," "$OMS" | grep -oE "[0-9]+" | head -1)
+# Baseline comes from the COMMITTED artifact, not the working tree. If the
+# author already bumped the badge or appended the rev entry by hand, deriving
+# from the working tree double-bumps: a tree already carrying rev 17 computes
+# NEWREV=18 and appends a second entry, which the gate cannot catch because
+# 18 > 16 satisfies check 8b. Falls back to the tree on a first commit.
+HEADOMS=$(git show "HEAD:$OMS" 2>/dev/null || true)
+OLDVER=$(printf '%s' "$HEADOMS" | grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
+OLDREV=$(printf '%s' "$HEADOMS" | grep -oE "\{rev:[0-9]+," | grep -oE "[0-9]+" | head -1)
+[ -n "$OLDVER" ] || OLDVER=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' "$OMS" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
+[ -n "$OLDREV" ] || OLDREV=$(grep -oE "\{rev:[0-9]+," "$OMS" | grep -oE "[0-9]+" | head -1)
+CURVER=$(grep -oE 'vbadge">v[0-9]+\.[0-9]+\.[0-9]+' "$OMS" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
 NEWREV=$((OLDREV + 1))
 
 # Monotonic check up front, so a bad version fails before anything is edited.
@@ -61,12 +70,12 @@ echo "  rev log   $OLDREV -> $NEWREV   ($TODAY)"
 echo "=============================================="
 
 # Refuse to overwrite an already-bumped file, so a re-run is safe.
-if [ "$OLDVER" = "$NEWVER" ]; then
+if [ "$CURVER" = "$NEWVER" ]; then
   echo "Badge already reads $NEWVER — skipping bump."
 else
-  BADGE_HITS=$(grep -c "vbadge\">$OLDVER" "$OMS" || true)
+  BADGE_HITS=$(grep -c "vbadge\">$CURVER" "$OMS" || true)
   [ "$BADGE_HITS" -eq 1 ] || die "expected exactly one badge occurrence, found $BADGE_HITS"
-  sed -i "s|vbadge\">$OLDVER|vbadge\">$NEWVER|" "$OMS"
+  sed -i "s|vbadge\">$CURVER|vbadge\">$NEWVER|" "$OMS"
   echo "badge bumped."
 fi
 
@@ -76,12 +85,15 @@ else
   python3 - "$OMS" "$NEWREV" "$TODAY" "$SUMMARY" <<'PY'
 import sys
 path, rev, today, summary = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-s = open(path, encoding='utf-8').read()
+# newline='' on BOTH ends. Without it, Python translates on write and the
+# whole artifact is rewritten with CRLF on Windows, which changes every
+# checksum and defeats .gitattributes.
+s = open(path, encoding='utf-8', newline='').read()
 anchor = "OMS_REV_LOG=[\n"
 if anchor not in s:
     raise SystemExit("ERROR: could not find the OMS_REV_LOG anchor")
 entry = "  {rev:%s,date:'%s',summary:'%s'},\n" % (rev, today, summary.replace("\\", "\\\\").replace("'", "\\'"))
-open(path, 'w', encoding='utf-8').write(s.replace(anchor, anchor + entry, 1))
+open(path, 'w', encoding='utf-8', newline='').write(s.replace(anchor, anchor + entry, 1))
 print("revision log entry added.")
 PY
 fi
