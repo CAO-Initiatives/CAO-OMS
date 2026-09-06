@@ -252,10 +252,10 @@
     ]
   },
   {
-    "id": "disable-does-not-end-a-live-session",
+    "id": "disable-ends-a-live-session",
     "code": "function OMS_TOKEN(){return sessionStorage.getItem(OMS_TOKEN_KEY)",
-    "requires_text": "It does not end a session that is already open",
-    "why": "OMS-050. Bound to the client's session accessor because check 12 reads only oms.html, and the mechanism this describes lives in the gateway: requireSession verifies the signed token and returns the role FROM IT, never reading auth/users.json, and there is no jti, token version or denylist anywhere in CAO-OMS-Gateway. So disabling, deleting or demoting an account changes nothing for a session already in progress, for up to the eight hours the token is minted for. The guide said Disable sign-in 'blocks access', which an administrator handling a departure would reasonably read as access ending now. This binding holds the sentence to the fact that a bearer token held in sessionStorage IS the client's whole credential: if per-request revocation is ever added at the gateway, this text has to be revisited at the same time."
+    "requires_text": "It ends a session that is already open, within about a minute",
+    "why": "Rev 42, correcting Rev 40. requireSession once returned the role FROM THE TOKEN and never read auth/users.json, so disabling somebody changed nothing for up to eight hours. Rev 40 wrote that limitation into the guide truthfully - and gateway OMS-051 removed it the same afternoon, which made the sentence false and left check 12 REQUIRING a false claim. That is the standing instruction's own failure mode running backwards, and it happened because check 12 reads only oms.html and cannot see the gateway. Bound to the client's session accessor for the same reason. If per-request resolution is ever removed at the gateway, this sentence has to be revisited in the same change."
   },
   {
     "id": "refused-save-says-which-refusal",
