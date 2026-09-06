@@ -1327,6 +1327,47 @@ ok('the guide explains the lockout guards',
 
 // ================================================================ REV 31
 console.log('\n# The suggested password can be dictated (OMS-049)');
+// ------------------------------------------------- Rev 33: one category vocabulary
+// Ari's workbook and OMS grew different words for the same categories, and the
+// importer used to pass the cell through untouched. These lock down the mapping
+// and the derivation, because the failure is invisible: it produces a SECOND
+// category that looks right next to the first.
+{
+  const canon = G('omsCanonicalCategory'), derive = G('omsDeriveCategory'), resolve = G('omsResolveImportCategory');
+  ok('omsCanonicalCategory is defined', typeof canon === 'function');
+  ok('omsDeriveCategory is defined', typeof derive === 'function');
+  ok('omsResolveImportCategory is defined', typeof resolve === 'function');
+  if (typeof canon === 'function') {
+    ok("the workbook's 'School of Medicine Events' becomes SOM Events", canon('School of Medicine Events') === 'SOM Events');
+    ok("the workbook's 'Chair Meetings' becomes Chairs", canon('Chair Meetings') === 'Chairs');
+    ok('case and padding do not defeat the mapping', canon('  chair MEETINGS ') === 'Chairs');
+    ok('a curly apostrophe maps the same as a straight one', canon('Dean\u2019s Office') === "Dean's Office");
+    ok('a category already in OMS wording is left alone', canon('Advocate BOD') === 'Advocate BOD');
+    ok('an unknown category is kept as typed, not forced to Other', canon('Vice Dean Forum') === 'Vice Dean Forum');
+    ok('a blank stays blank rather than becoming Other', canon('') === '' && canon(null) === '');
+  }
+  if (typeof derive === 'function') {
+    ok('a standing series beats a generic word: HA/HS Board Advance', derive('HA/HS Board Advance') === 'HA/HS');
+    ok('CAO Grand Rounds is CAO Rounds, not a board', derive('CAO Grand Rounds - Macon') === 'CAO Rounds');
+    ok('EB OOO is out of office, not a meeting', derive('EB OOO') === 'EB OOO');
+    ok('Advocate Health Board is Advocate BOD', derive('Advocate Health Board Meeting') === 'Advocate BOD');
+    ok('WFUBMC lands on WFUBSM BOD', derive('WFUBMC Committee/Board') === 'WFUBSM BOD');
+    ok('White Coat Ceremony is an SOM event', derive('White Coat Ceremony') === 'SOM Events');
+    ok('a bare board falls through to Board Meeting', derive('JCSU BOT Meeting Board') === 'Board Meeting');
+    ok('an unrecognized title is honestly Other', derive('Emeritus Academy') === 'Other');
+  }
+  if (typeof resolve === 'function') {
+    ok('an explicit workbook category wins over the guess',
+       resolve('Cabinet', 'White Coat Ceremony') === 'Cabinet');
+    ok('an explicit category is still translated first',
+       resolve('School of Medicine Events', 'Random Title') === 'SOM Events');
+    ok('a blank cell falls through to the title', resolve('', 'FEC Meeting') === 'FEC');
+    ok('a literal Other is treated as no answer, not as a choice',
+       resolve('Other', 'White Coat Ceremony') === 'SOM Events');
+    ok('a blank cell and an unrecognizable title is Other', resolve('', 'Emeritus Academy') === 'Other');
+  }
+}
+
 const suggest = G('omsSuggestedPassword');
 
 // ---------------------------------------------------------------- Rev 32: Add User issues the sign-in

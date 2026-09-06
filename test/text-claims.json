@@ -118,5 +118,23 @@
     "text": "Sign-in accounts are issued separately, through the gateway",
     "forbids_code": "omsAccountAction('create'",
     "why": "True until Rev 30 gave the client an account-creation path. The claim must not return while that path exists."
+  },
+  {
+    "id": "import-derives-category",
+    "code": "function omsResolveImportCategory(",
+    "requires_text": "OMS reads the event name and works the category out",
+    "why": "Rev 33 made the importer derive a category when the workbook column is blank - 145 of Ari's 182 rows. If that derivation is ever removed, the guide promising it must go at the same time, or the calendar silently fills with Other again while the text says otherwise."
+  },
+  {
+    "id": "import-maps-the-workbook-vocabulary",
+    "code": "OMS_CATEGORY_ALIASES",
+    "requires_text": "The workbook’s wording is translated, not copied",
+    "why": "The alias table is the only thing stopping 'School of Medicine Events' appearing beside 'SOM Events' the moment the workbook column is filled in. It is invisible when working, so nothing but this binding would notice it being dropped."
+  },
+  {
+    "id": "one-read-tier-is-stated",
+    "code": "function OMS_IS_EDITOR(",
+    "requires_text": "OMS has one read tier",
+    "why": "Bound to the client's access-level helper because check 12 only reads oms.html. Writes are enforced at the gateway but reads are not segmented: every signed-in account receives all of canonical state. Users will assume read-only means restricted visibility unless told plainly, and that assumption is how something confidential ends up in a note."
   }
 ]
