@@ -1,0 +1,116 @@
+{
+  "comment": "OMS notification relay (REV19-004). Import into Power Automate, or use as the reference for building the four cards by hand. Replace REPLACE_WITH_SHARED_SECRET with the same value set as OMS_RELAY_KEY in the gateway's Vercel environment, and authorize the shared_office365 connection as the mailbox that should send. See ../rev19-004-notification-relay.md.",
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "$connections": { "defaultValue": {}, "type": "Object" },
+      "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+    },
+    "triggers": {
+      "When_a_HTTP_request_is_received": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "notificationId": { "type": "string" },
+              "to": { "type": "string" },
+              "recipientName": { "type": "string" },
+              "subject": { "type": "string" },
+              "body": { "type": "string" }
+            },
+            "required": ["to", "subject", "body"]
+          },
+          "method": "POST"
+        }
+      }
+    },
+    "actions": {
+      "Check_the_shared_secret": {
+        "type": "If",
+        "description": "The trigger URL's sig is itself a bearer credential. This header is the second factor, so a leaked URL alone cannot send mail as the Dean.",
+        "expression": {
+          "and": [
+            {
+              "equals": [
+                "@triggerOutputs()?['headers']?['X-OMS-Relay-Key']",
+                "REPLACE_WITH_SHARED_SECRET"
+              ]
+            }
+          ]
+        },
+        "actions": {
+          "Send_an_email_V2": {
+            "type": "OpenApiConnection",
+            "inputs": {
+              "host": {
+                "connectionName": "shared_office365",
+                "operationId": "SendEmailV2",
+                "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+              },
+              "parameters": {
+                "emailMessage/To": "@triggerBody()?['to']",
+                "emailMessage/Subject": "@triggerBody()?['subject']",
+                "emailMessage/Body": "@triggerBody()?['body']",
+                "emailMessage/Importance": "@if(contains(coalesce(triggerBody()?['subject'], ''), 'HIGH PRIORITY'), 'High', 'Normal')",
+                "emailMessage/IsHtml": false
+              },
+              "authentication": "@parameters('$authentication')"
+            },
+            "runAfter": {}
+          },
+          "Respond_relayed": {
+            "type": "Response",
+            "kind": "Http",
+            "inputs": {
+              "statusCode": 200,
+              "headers": { "Content-Type": "application/json" },
+              "body": {
+                "relayed": true,
+                "notificationId": "@{coalesce(triggerBody()?['notificationId'], '')}"
+              }
+            },
+            "runAfter": { "Send_an_email_V2": ["Succeeded"] }
+          },
+          "Respond_send_failed": {
+            "type": "Response",
+            "kind": "Http",
+            "inputs": {
+              "statusCode": 502,
+              "headers": { "Content-Type": "application/json" },
+              "body": {
+                "relayed": false,
+                "error": "The Office 365 connector did not accept the message.",
+                "notificationId": "@{coalesce(triggerBody()?['notificationId'], '')}"
+              }
+            },
+            "runAfter": { "Send_an_email_V2": ["Failed", "TimedOut", "Skipped"] }
+          }
+        },
+        "else": {
+          "actions": {
+            "Respond_unauthorized": {
+              "type": "Response",
+              "kind": "Http",
+              "inputs": {
+                "statusCode": 401,
+                "headers": { "Content-Type": "application/json" },
+                "body": { "relayed": false, "error": "Bad or missing X-OMS-Relay-Key." }
+              }
+            }
+          }
+        },
+        "runAfter": {}
+      }
+    },
+    "outputs": {}
+  },
+  "notes": [
+    "IsHtml is false on purpose. createNotificationForTask builds a plain-text body joined with newlines; rendering it as HTML collapses every line break and the message arrives as one paragraph.",
+    "Importance is derived from the subject rather than passed separately, because Rev 19 fixed the subject standard as the single place high priority is expressed: 'OMS | HIGH PRIORITY | Due ... | New assignment | <task> | <owner>'.",
+    "The 502 branch matters: without it a failed send still returns 200 and the gateway logs nothing, so a silent mail outage looks identical to success.",
+    "Phase 1 does not write status back to canonical. Relayed notifications keep reading 'pending' in OMS, and their Outlook draft link still works, so a message can be sent by hand if the relay was down. See the design note for why that is deliberate and what phase 2 should do."
+  ]
+}
