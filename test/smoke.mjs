@@ -569,6 +569,36 @@ ok('rBrief actually renders the deliverables section',
    /function rBrief[\s\S]{0,4000}?briefTasksDue\(/.test(main),
    'the function existing is not enough; the Brief must show it');
 
+// ---------------------------------------------------------------- en-US only (OPS-022)
+// Standard set 6 Sept 2026: all OMS text is en-US, not en-GB. Rev 17-19 had
+// introduced 18 "colour" and 3 "grey" into the legend, the User Guide and the
+// revision log. This is a guard so the standard is enforced rather than
+// remembered.
+//
+// Deliberately NOT checked: "centre" and "cancelled". Both can appear
+// legitimately in imported Outlook or workbook data (a venue name, an event
+// title), and a guard that fires on real data would be turned off. If a proper
+// noun ever trips one of the words below, exempt it here rather than reverting
+// the standard.
+console.log('\n# en-US spelling standard (OPS-022)');
+const EN_GB = [
+  'colour', 'behaviour', 'favourite', 'honour', 'neighbour',
+  'organis', 'recognis', 'normalis', 'prioritis', 'summaris', 'customis', 'utilis', 'apologis',
+  'licence', 'defence', 'pretence', 'analyse', 'paralyse', 'catalogue',
+  'programme', 'travelling', 'labelled', 'modelling', 'whilst', 'amongst',
+];
+const found = EN_GB.filter(w => new RegExp(w, 'i').test(html));
+const greyHits = (html.match(/\bgrey\b/gi) || []).length;
+ok('no en-GB spellings in the artifact', found.length === 0,
+   found.length ? 'found: ' + found.join(', ') : '');
+ok('grey is spelled gray', greyHits === 0, greyHits ? greyHits + ' occurrence(s) of "grey"' : '');
+ok('the en-US guard actually looks at the shipped text',
+   html.length > 100000 && EN_GB.length >= 20,
+   'a guard over an empty string would pass vacuously');
+// the CSS property is "color" and must survive any spelling sweep
+ok('the CSS color property is intact', /color:var\(--mu\)/.test(html) && /background:#f3f4f6;color:#374151/.test(html),
+   'a careless colour->color replacement could corrupt the stylesheet');
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
