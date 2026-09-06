@@ -310,7 +310,7 @@ if (typeof writeV === 'function' && typeof listV === 'function' &&
      listV('del').length === 1 && listV('del')[0].name === 'My overdue');
   ok('views are scoped, so calendar views do not leak into Deliverables', listV('cal').length === 0);
   applyV('v1');
-  ok('applying a view sets the live filter state', T.fn('delSt') === 'Overdue');
+  ok('applying a view sets the live filter state', T.fn('taskSt') === 'Overdue');
   delV('v1');
   ok('a view can be deleted', listV('del').length === 0);
   ok('unparseable stored views degrade to none, they do not throw', (() => {
@@ -668,6 +668,56 @@ ok('the wait still gives up rather than looping forever',
 ok('the total budget is at least the old fifteen seconds',
    /2\d000/.test(waitSrc) || /[2-9]\d000/.test(waitSrc),
    'confirmations were observed at about ten seconds, so the window must comfortably exceed that');
+
+// ================================================================ REV 22
+// One vocabulary. The tab already read "Tasks" while the code, the notification
+// copy and the Weekly Brief still said "Deliverable", so the app called the same
+// thing two names depending on where you looked.
+
+console.log('\n# One vocabulary: tasks, not deliverables (Rev 22)');
+// The revision log is history and must NOT be rewritten, so it is excluded.
+const revLogStart = html.indexOf('const OMS_REV_LOG');
+const revLogEnd = html.indexOf('];', revLogStart);
+const outsideRevLog = html.slice(0, revLogStart) + html.slice(revLogEnd);
+ok('no user-facing text says deliverable', !/[Dd]eliverable/.test(outsideRevLog),
+   (outsideRevLog.match(/[Dd]eliverable\w*/g) || []).slice(0, 6).join(', '));
+ok('the revision log keeps its history intact',
+   /[Dd]eliverable/.test(html.slice(revLogStart, revLogEnd)),
+   'past entries are an audit record; rewriting them would falsify what shipped');
+
+console.log('\n# Tab and handler renamed (Rev 22)');
+ok('the tab id is tasks, not del', /id="tasks" class="tab/.test(html) && !/id="del" class="tab/.test(html));
+ok('the nav button navigates to tasks', /go\('tasks'\)/.test(html) && !/go\('del'\)/.test(html));
+ok('the tab order array uses tasks', /'sops','tasks','guide'/.test(main) && !/'sops','del','guide'/.test(main));
+ok('renderTab dispatches on tasks', /t==='tasks'\)rTasks\(\)/.test(main) && !/t==='del'\)rDel\(\)/.test(main));
+ok('the render function is rTasks', /function rTasks\(/.test(main) && !/function rDel\(/.test(main));
+// Scoped outside the revision log: an entry explaining this rename legitimately
+// names the old variable, and prose about code is not code.
+const codeOnly = (() => { const a = main.indexOf('const OMS_REV_LOG'); const b = main.indexOf('];', a);
+  return a < 0 ? main : main.slice(0, a) + main.slice(b); })();
+ok('the filter state is renamed', /taskQ|taskSt|taskOw/.test(codeOnly) && !/\bdelQ\b|\bdelSt\b|\bdelOw\b/.test(codeOnly));
+ok('rTasks writes into the renamed element', /getElementById\('tasks'\)/.test(main));
+
+console.log('\n# Delete helpers left alone (Rev 22)');
+// delItem and delEv mean DELETE, not deliverable. Renaming them would be a
+// misreading of the abbreviation and would break every call site.
+ok('delItem survives untouched', /function delItem\(/.test(main) && (main.match(/delItem\(/g) || []).length >= 4,
+   'del here abbreviates delete, not deliverable');
+ok('delEv survives untouched', /function delEv\(/.test(main) && (main.match(/delEv\(/g) || []).length >= 2);
+
+console.log('\n# Notification copy uses the new vocabulary (Rev 22)');
+const subjFn = G('notificationSubject');
+if (typeof subjFn === 'function') {
+  ok('an untitled task is called a task, not a deliverable',
+     /Untitled task/.test(subjFn({ owner: 'X', due: '2026-09-08' })));
+}
+ok('the assignment body says task', /You have been assigned a new OMS task/.test(main));
+ok('the reassignment body says task', /An OMS task has been reassigned to you/.test(main));
+ok('the body label says Task', /'Task: '\+/.test(main));
+
+console.log('\n# Weekly Brief wording (Rev 22)');
+ok('the Brief section is titled Tasks Due This Week', /Tasks Due This Week/.test(html));
+ok('the empty state says tasks', /No tasks due this week/.test(main));
 
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
