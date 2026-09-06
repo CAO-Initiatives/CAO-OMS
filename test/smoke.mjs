@@ -2008,6 +2008,86 @@ console.log('\n# The reconciler, executed (Rev 36)');
        'prose changes whenever somebody improves it; the code does not');
   }
 
+  // ---- Rev 44a: an update sends only the keys that changed
+  // Sending the whole record defeated the one piece of concurrency control the
+  // consolidator has. consolidate.py raises a same-field conflict when a key is
+  // in BOTH baseValues and changes and canonical has moved; send every key and
+  // every key overlaps, so two people editing DIFFERENT fields of the same
+  // record collide and one loses. Verified against the real consolidator.
+  {
+    const h = build();
+    h.run(`ST={schemaVersion:2,revision:75,tasks:[{id:'t1',title:'A',notes:'',owner:'Maggie Scirica',_version:1}]};
+           OMS_BASE=JSON.parse(JSON.stringify(ST));OMS_REVISION=75;_dirty.clear();`);
+    h.run(`ST.tasks[0].notes='B typed a note';_dirty.add('tasks');`);
+    const ops = JSON.parse(h.run(`JSON.stringify(OMS_DIFF())`));
+    ok('one update is produced', ops.length === 1 && ops[0].action === 'update');
+    ok('changes carries ONLY the field that changed',
+       JSON.stringify(Object.keys(ops[0].changes)) === '["notes"]',
+       JSON.stringify(Object.keys(ops[0].changes)));
+    ok('baseValues carries the same key, so the overlap test still works',
+       JSON.stringify(Object.keys(ops[0].baseValues)) === '["notes"]',
+       JSON.stringify(Object.keys(ops[0].baseValues)));
+    ok('...holding the value it had before', ops[0].baseValues.notes === '');
+    ok('untouched fields are not sent at all',
+       !('title' in ops[0].changes) && !('owner' in ops[0].changes));
+
+    // A create has nothing to diff against and must still send everything.
+    h.run(`ST.tasks.push({id:'t9',title:'New',notes:'n',_version:0});`);
+    const ops2 = JSON.parse(h.run(`JSON.stringify(OMS_DIFF())`));
+    const cr = ops2.find(o => o.action === 'create');
+    ok('a create still sends the whole record', cr && cr.changes.title === 'New' && cr.changes.notes === 'n');
+
+    // No change at all must still produce nothing.
+    h.run(`OMS_BASE=JSON.parse(JSON.stringify(ST));`);
+    ok('an identical record produces no operation',
+       JSON.parse(h.run(`JSON.stringify(OMS_DIFF())`)).length === 0);
+  }
+
+  // ---- Rev 44b: somebody else's change arrives without a save or a reload
+  // Before this the client fetched shared state only at sign-in, during a save,
+  // and while the reconciler ran. An hour idle made zero calls and the screen
+  // stayed stale until you saved something.
+  {
+    const h = build();
+    h.run(`globalThis.__b='Connected';OMS_START_WATCH();`);
+    const before = h.calls.state;
+    h.setCanonical({ schemaVersion: 2, revision: 80,
+      tasks: [{ id: 't1', title: 'Original', _version: 1 }, { id: 't2', title: 'From a colleague', _version: 1 }] });
+    await h.advance(70000);
+    ok('an idle session polls for other people\'s work', h.calls.state - before > 0,
+       (h.calls.state - before) + ' calls');
+    ok('and adopts it', h.run(`ST.tasks.length`) === 2, h.run(`ST.tasks.length`) + ' tasks');
+    ok('...moving to the shared revision', h.run(`OMS_REVISION`) === 80, h.run(`OMS_REVISION`));
+
+    // The cost has to stay small: this runs in every open tab.
+    const h2 = build();
+    h2.run(`globalThis.__b='Connected';OMS_START_WATCH();`);
+    const b2 = h2.calls.state;
+    await h2.advance(3600 * 1000);
+    ok('an hour of idling costs about sixty reads, not thousands',
+       h2.calls.state - b2 <= 70, (h2.calls.state - b2) + ' in an hour');
+  }
+
+  // ---- Rev 44b: and it must never adopt over work in progress
+  {
+    const h = build();
+    h.run(`globalThis.__b='Connected';ST.tasks[0].title='I am typing';_dirty.add('tasks');OMS_START_WATCH();`);
+    h.setCanonical({ schemaVersion: 2, revision: 90, tasks: [{ id: 't1', title: 'Theirs', _version: 9 }] });
+    await h.advance(200000);
+    ok('it does not adopt while there are unsaved edits',
+       h.run(`ST.tasks[0].title`) === 'I am typing', h.run(`ST.tasks[0].title`));
+    ok('OMS_WATCH_SAFE says why', h.run(`OMS_WATCH_SAFE()`) === false);
+
+    const h3 = build();
+    h3.run(`globalThis.__b='Connected';_dirty.clear();
+            OMS_INFLIGHT={ops:[{entityType:'tasks',entityId:'t1',action:'update',baseVersion:1,changes:{}}],seq:0,from:75};
+            OMS_START_WATCH();`);
+    h3.setCanonical({ schemaVersion: 2, revision: 90, tasks: [{ id: 't1', title: 'Theirs', _version: 9 }] });
+    await h3.advance(200000);
+    ok('nor while a batch is still with the gateway',
+       h3.run(`ST.tasks[0].title`) === 'Original', h3.run(`ST.tasks[0].title`));
+  }
+
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();
   h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);
