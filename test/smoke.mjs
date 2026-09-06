@@ -188,6 +188,184 @@ ok('all three fields are required before save', /first name, last name and email
 ok('an existing email offers the existing person', /already on file for/i.test(main));
 ok('ambiguity blocks the save', /matches more than one person/i.test(main));
 
+// ================================================================ REV 17
+// Written BEFORE the implementation, per REV17.md, as todoCheck, then promoted
+// to hard ok() once each passed. Items 6 and 7 are visual and the brief skips
+// them — except the multi-day DATE MATH, which is logic, not CSS.
+
+// ---------------------------------------------------------------- 6. ownerId backfill (item 1)
+console.log('\n# ownerId backfill (Rev 17, item 1)');
+const backfill = G('backfillTaskOwnerIds');
+ok('backfillTaskOwnerIds is defined', typeof backfill === 'function');
+if (typeof backfill === 'function') {
+  T.setST({
+    people: [
+      { id: 'maggie-scirica', name: 'Maggie Scirica', email: 'Margaret.Scirica@Advocatehealth.org', active: true },
+      { id: 'ari-ball', name: 'Ari Ball', email: 'Ariana.Ball@advocatehealth.org', active: true },
+    ],
+    tasks: [
+      { id: 't1', owner: 'Ari', ownerEmail: 'Ariana.Ball@advocatehealth.org' }, // email set, id missing
+      { id: 't2', owner: 'Maggie' },                                            // both missing
+      { id: 't3', owner: 'Hossam/Maggie' },                                     // ambiguous
+      { id: 't4', owner: 'Ari', ownerId: 'pinned', ownerEmail: 'x@y.z' },       // already resolved
+      { id: 't5' },                                                             // no owner at all
+    ],
+  });
+  const changed = backfill();
+  const byId = id => (T.st.tasks || []).find(t => t.id === id) || {};
+  ok('backfills ownerId even when ownerEmail is ALREADY present',
+     byId('t1').ownerId === 'ari-ball',
+     'exactly the case the Rev 16 migration skipped, because it gated on !ownerEmail');
+  ok('backfills ownerId and ownerEmail together when both are missing',
+     byId('t2').ownerId === 'maggie-scirica' && /Margaret/i.test(byId('t2').ownerEmail || ''));
+  ok('leaves an ambiguous owner string alone', byId('t3').ownerId == null,
+     'findPerson binds only when exactly one person matches; the backfill must not guess');
+  ok('never overwrites an ownerId that is already set', byId('t4').ownerId === 'pinned');
+  ok('ignores a task with no owner', byId('t5').ownerId == null);
+  ok('reports how many tasks it changed', changed === 2);
+}
+ok('the backfill runs through the normal save path, not a direct state write',
+   /backfillTaskOwnerIds\(\)/.test(main) && /function migrateNotificationsState[\s\S]{0,500}?save\(\)/.test(main),
+   'tasks all carry ids, so OMS_DIFF emits ordinary update operations and the audit trail is kept');
+
+// ---------------------------------------------------------------- 7. Retired status (item 2)
+console.log('\n# Retired task status (Rev 17, item 2)');
+const stBf = G('stB'), tds = G('taskDisplayStatus'), ovdT = G('overdueTasks'), ets = G('eventTaskStats');
+ok('Retired is offered in the task status picker', />Retired<\/option>/.test(main));
+ok('taskDisplayStatus is defined', typeof tds === 'function');
+if (typeof tds === 'function') {
+  ok('a past-due Retired task is NOT overdue', tds({ status: 'Retired', due: '2020-01-01' }) === 'Retired',
+     'retired work is withdrawn, not late');
+  ok('a past-due Not Started task IS still overdue', tds({ status: 'Not Started', due: '2020-01-01' }) === 'Overdue');
+  ok('a past-due Complete task is not overdue', tds({ status: 'Complete', due: '2020-01-01' }) === 'Complete');
+}
+if (typeof ovdT === 'function') {
+  ok('the dashboard overdue count excludes Retired',
+     ovdT([{ status: 'Retired', due: '2020-01-01' }, { status: 'Not Started', due: '2020-01-01' }]).length === 1);
+}
+if (typeof stBf === 'function') {
+  const cls = s => (String(stBf(s)).match(/class="b ([a-z0-9]+)"/) || [])[1];
+  ok('Retired has its own badge class, not the grey default',
+     !!cls('Retired') && cls('Retired') !== cls('Not Started') && cls('Retired') !== cls('Complete'));
+  ok('that badge class is actually styled in the stylesheet',
+     !!cls('Retired') && new RegExp('\\.' + cls('Retired') + '\\{').test(html));
+}
+if (typeof ets === 'function') {
+  T.setST({ tasks: [
+    { id: 'a', sourceEventId: 'e1', status: 'Complete' },
+    { id: 'b', sourceEventId: 'e1', status: 'Retired' },
+    { id: 'c', sourceEventId: 'e1', status: 'In Progress' },
+  ] });
+  const s1 = ets('e1');
+  ok('eventTaskStats excludes Retired from the done numerator', s1.done === 1,
+     'three tasks closed as Complete on 5 Sept were never delivered; the numerator must not carry them');
+  ok('eventTaskStats reports retired separately', s1.retired === 1);
+  ok('eventTaskStats does not silently count Retired as open', s1.open === 1);
+}
+
+// ---------------------------------------------------------------- 8. Recurring + categories (item 3)
+console.log('\n# Recurring flag and user-maintained categories (Rev 17, item 3)');
+ok('the event form carries a Recurring control', /f_recurring/.test(html));
+ok('saveModal persists recurring as a boolean, not a string',
+   /recurring:\s*(?:!!|gc\()/.test(main),
+   'the Outlook calendar sync will populate this field');
+const cats = G('eventCategories');
+ok('eventCategories is defined', typeof cats === 'function');
+if (typeof cats === 'function') {
+  T.setST({ events: [{ id: 'e1', category: 'Retreats' }, { id: 'e2', category: 'Cabinet' }] });
+  const list = cats();
+  ok('built-in categories are still offered', list.includes('Cabinet') && list.includes('FEC'));
+  ok('a category used by an event but not built in is offered', list.includes('Retreats'),
+     'a category one user adds must reach everyone WITHOUT a new synced collection');
+  ok('the category list has no duplicates', new Set(list).size === list.length);
+  ok('cadence is not folded into the category list', !list.includes('Recurring'),
+     'a category holds one value; Recurring is a separate boolean for exactly this reason');
+}
+ok('a category is added inline, not through a second modal',
+   /f_cat_new/.test(html) && !/openModal\([^)]*categor/i.test(main),
+   'one overlay, one #mbody');
+
+// ---------------------------------------------------------------- 9. Saved views (item 4)
+console.log('\n# User-editable filters, saved per user (Rev 17, item 4)');
+const saveV = G('omsSaveView'), applyV = G('omsApplyView'), delV = G('omsDeleteView'),
+      listV = G('omsSavedViews'), writeV = G('omsWriteViews'), viewUser = G('omsViewUser');
+ok('the saved-view functions are defined',
+   [saveV, applyV, delV, listV, writeV].every(f => typeof f === 'function'));
+ok('views are keyed per user, not shared across the browser',
+   typeof viewUser === 'function' && /OMS_USER/.test(String(viewUser)));
+if (typeof writeV === 'function' && typeof listV === 'function' &&
+    typeof applyV === 'function' && typeof delV === 'function') {
+  // applyV re-renders, and the render functions read ST; give them a live shape.
+  T.setST({ tasks: [], events: [], sops: [], people: [] });
+  writeV([{ id: 'v1', scope: 'del', name: 'My overdue', filters: { st: 'Overdue', ow: 'All', q: '' } }]);
+  ok('a saved view round-trips out of storage',
+     listV('del').length === 1 && listV('del')[0].name === 'My overdue');
+  ok('views are scoped, so calendar views do not leak into Deliverables', listV('cal').length === 0);
+  applyV('v1');
+  ok('applying a view sets the live filter state', T.fn('delSt') === 'Overdue');
+  delV('v1');
+  ok('a view can be deleted', listV('del').length === 0);
+  ok('unparseable stored views degrade to none, they do not throw', (() => {
+    // localStorage lives in the vm sandbox, not in this file's scope.
+    try { sandbox.localStorage.setItem('cao_oms_views', '{not json'); return listV('del').length === 0 }
+    catch (e) { return false }
+    finally { sandbox.localStorage.removeItem('cao_oms_views') }
+  })());
+}
+ok('saved views add no synced collection',
+   COLLECTIONS.length === 15 && !COLLECTIONS.some(c => /^(saved)?views$/i.test(c)),
+   'Rev 18 owns the sync surface; Rev 17 must not widen it');
+
+// ---------------------------------------------------------------- 10. Auto-extending horizon (item 5)
+console.log('\n# Auto-extending calendar horizon (Rev 17, item 5)');
+const span = G('calYearSpan');
+ok('calYearSpan is defined', typeof span === 'function');
+if (typeof span === 'function') {
+  const y = new Date().getFullYear();
+  const s1 = span([{ date: y + '-03-01' }, { date: (y + 3) + '-05-01' }]);
+  ok('an event beyond the loaded range extends the horizon', s1.includes(y + 3));
+  ok('the extended horizon has no gaps', s1.includes(y + 1) && s1.includes(y + 2));
+  ok('the span is contiguous and ascending', s1.every((v, i) => i === 0 || v === s1[i - 1] + 1));
+  ok('the current year is always present', span([{ date: (y + 2) + '-01-01' }]).includes(y));
+  ok('an end date past the start year extends the horizon too',
+     span([{ date: y + '-12-30', endDate: (y + 1) + '-01-02' }]).includes(y + 1));
+  ok('a wild out-of-range date does not explode the grid',
+     span([{ date: y + '-01-01' }, { date: (y + 400) + '-01-01' }]).length <= 12,
+     'a typo like 2426 must not render hundreds of year blocks');
+  ok('no events yields no year blocks', span([]).length === 0);
+  // Caught by rendering it, not by a test: gap-filling BACKWARDS turned one
+  // stray 2020 due date into eleven years of mostly empty month blocks.
+  const back = span([{ date: '2020-01-01' }, { date: y + '-06-01' }]);
+  ok('a single old date does not gap-fill the past', !back.includes(2022) && !back.includes(y - 1),
+     'the past is kept compact; only the forward horizon is filled in');
+  ok('an old date is still shown as its own year block', back.includes(2020) && back.includes(y));
+}
+
+// ---------------------------------------------------------------- 11. Multi-day spanning (item 6)
+// The brief skips 6 as visual. The date MATH underneath it is not visual, and
+// is exactly the kind of logic the gw/rob defect taught us to exercise.
+console.log('\n# Multi-day event spanning, date logic only (Rev 17, item 6)');
+const inMonth = G('calOccursInMonth'), dayLabel = G('calDayLabel');
+ok('calOccursInMonth is defined', typeof inMonth === 'function');
+if (typeof inMonth === 'function') {
+  const e = { date: '2026-12-30', endDate: '2027-01-02' };
+  ok('a spanning event appears in its START month', inMonth(e, 11, 2026) === true);
+  ok('a spanning event ALSO appears in its END month', inMonth(e, 0, 2027) === true,
+     'buildCalGrid filtered on a single date, so it rendered once, in its start month');
+  ok('a spanning event does not appear in unrelated months', inMonth(e, 5, 2026) === false);
+  ok('a single-day event still appears exactly once',
+     inMonth({ date: '2026-06-10' }, 5, 2026) === true && inMonth({ date: '2026-06-10' }, 6, 2026) === false);
+  ok('an endDate earlier than the start date is ignored, not honoured',
+     inMonth({ date: '2026-06-10', endDate: '2026-01-01' }, 0, 2026) === false);
+}
+if (typeof dayLabel === 'function') {
+  ok('the day label clips the range to the month shown',
+     dayLabel({ date: '2026-12-30', endDate: '2027-01-02' }, 11, 2026) === '30-31' &&
+     dayLabel({ date: '2026-12-30', endDate: '2027-01-02' }, 0, 2027) === '1-2');
+  ok('a single-day event shows a bare day number',
+     dayLabel({ date: '2026-06-10' }, 5, 2026) === '10');
+}
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
