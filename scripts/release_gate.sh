@@ -200,6 +200,22 @@ else
   fail "12 scripts/text_claims.py missing from the repository"
 fi
 
+# ---- 13: CLAUDE.md must not hand-write counts -------------------------------
+# Same failure as check 12, one file over. CLAUDE.md claimed 268 assertions and
+# 11 gate checks on a day the suite passed 401 and ran 12 - wrong twice in two
+# days. A count in prose is a fact with no owner: nothing fails when it drifts.
+# The numbers were deleted rather than corrected; this keeps them out. History
+# ("58 of 85 runs were failing") is deliberately not flagged.
+if [ -f scripts/no_handwritten_counts.py ]; then
+  if python3 scripts/no_handwritten_counts.py; then
+    pass "13 CLAUDE.md hand-writes no counts"
+  else
+    fail "13 CLAUDE.md hand-writes a count that will go stale (see above)"
+  fi
+else
+  fail "13 scripts/no_handwritten_counts.py missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"

@@ -4,11 +4,11 @@ Dean's Office Operations Management System, Wake Forest University School of Med
 
 ## What this repo is
 
-`oms.html` is the entire application: one file, ~229 KB, three inline `<script>` blocks, no build step, no dependencies beyond a CDN SheetJS tag. `index.html` is the sign-in page. GitHub Pages serves both from `main`, so **a push to `main` is a deploy**.
+`oms.html` is the entire application: one file, three inline `<script>` blocks, no build step, no dependencies beyond a CDN SheetJS tag. `index.html` is the sign-in page. GitHub Pages serves both from `main`, so **a push to `main` is a deploy**.
 
 Two sibling repos, both private:
 
-- `CAO-OMS-Gateway` — Vercel functions. `api/operation.js` is a thin wrapper; the logic is in `lib/core.js` (~136 lines), which authenticates as a GitHub App and writes to the data repo. It has no array primitives — it validates and persists, it does not merge.
+- `CAO-OMS-Gateway` — Vercel functions. `api/operation.js` is a thin wrapper; the logic is in `lib/core.js`, which authenticates as a GitHub App and writes to the data repo. It has no array primitives — it validates and persists, it does not merge.
 - `CAO-OMS-Data` — canonical state: `state/oms-state.json`, `state/manifest.json`, `operations/processed/`, `snapshots/`, and `RECOVERY.md`. A consolidator workflow folds operations into the state file.
 
 ## Release rules
@@ -20,15 +20,17 @@ Two sibling repos, both private:
 Before pushing `oms.html`:
 
 ```bash
-node test/smoke.mjs oms.html      # behavior — 268 assertions
-./scripts/release_gate.sh HEAD~1  # form — 11 checks + 31 preflight assertions
+node test/smoke.mjs oms.html      # behavior
+./scripts/release_gate.sh HEAD~1  # form
 ```
 
 `./scripts/release.sh <minor> "<summary>"` does the whole release: bumps the badge, writes the revision-log entry, runs smoke, runs the gate, commits, pushes, watches CI. It refuses to push if either check fails. `./scripts/rollback.sh <commit-ish>` restores an older artifact. `./scripts/verify_live.sh <sha256>` polls the deployed site until it serves what you expect.
 
+**No counts are written in this file, deliberately.** How many assertions the suite holds, how many checks the gate runs, how large the artifact is: every one of those was written down once and was wrong within days, because a number in prose is a fact with no owner and nothing fails when it drifts. This file said 268 assertions and 11 checks on the day the suite passed 401 and 12. Run the command and read the total it prints. **Gate check 13 fails if a count is written back into this file**; if you want to say the suite is thorough, say that, and let the command say how thorough.
+
 Every non-cosmetic change **must** bump the version badge, append an `OMS_REV_LOG` entry, and touch the embedded User Guide. The gate enforces all three; that is deliberate.
 
-**Descriptive text must be tied to the code it describes.** Standing instruction. The guide hash check proves the guide *changed*, not that it became *true*, and nothing else tied a tooltip or a guide line to the behaviour behind it — so text drifted silently and stayed wrong until somebody read it. In one day that produced a tooltip still instructing the exact action that caused the OMS-003 defect, a control promising a forced password change it could not deliver, and task tooltips listing a field set two revisions out of date.
+**Descriptive text must be tied to the code it describes.** Standing instruction. The guide hash check proves the guide *changed*, not that it became *true*, and nothing else tied a tooltip or a guide line to the behavior behind it — so text drifted silently and stayed wrong until somebody read it. In one day that produced a tooltip still instructing the exact action that caused the OMS-003 defect, a control promising a forced password change it could not deliver, and task tooltips listing a field set two revisions out of date.
 
 Gate check 12 (`scripts/text_claims.py`, manifest `test/text-claims.json`) enforces it in both directions:
 
