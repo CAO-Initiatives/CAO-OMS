@@ -599,6 +599,76 @@ ok('the en-US guard actually looks at the shipped text',
 ok('the CSS color property is intact', /color:var\(--mu\)/.test(html) && /background:#f3f4f6;color:#374151/.test(html),
    'a careless colour->color replacement could corrupt the stylesheet');
 
+// ================================================================ REV 21
+// The sync-path release. Two items only. REV19-001 is deliberately absent:
+// reading lib/core.js showed /api/operation takes ONE operation, so batching is
+// a gateway change, and the real cost is two GitHub round trips per operation
+// (OPS-023). Assertions written first, as the brief requires for anything
+// touching sync.
+
+console.log('\n# Sync path left intact (Rev 21)');
+// The single most important assertion in this release: this change must not
+// have disturbed OMS_SYNC_ONCE, which carries the id-less-record guard.
+const syncSrc21 = typeof G('OMS_SYNC_ONCE') === 'function' ? G('OMS_SYNC_ONCE').toString() : '';
+ok('OMS_SYNC_ONCE still carries the id-less guard on BOTH exit paths',
+   (syncSrc21.match(/OMS_UNSYNCABLE\(\)/g) || []).length >= 2 &&
+   /Records with no id cannot be synced/.test(syncSrc21) &&
+   /Saved, but records with no id cannot be synced/.test(syncSrc21),
+   'CLAUDE.md: if you touch OMS_SYNC_ONCE, keep the check on both exit paths');
+ok('the operation loop is still sequential, REV19-001 deferred',
+   /for\(const op of ops\)await OMS_POST\(op\)/.test(main),
+   'batching needs a gateway change; parallelising here was rejected pending OPS-023');
+ok('the beforeunload guard did not require editing OMS_SYNC_ONCE',
+   !/OMS_SYNC_INFLIGHT/.test(syncSrc21),
+   'the counter lives in OMS_QUEUE_SYNC so the guarded function is untouched');
+
+console.log('\n# beforeunload guard while a save is pending (Rev 21, REV19-003)');
+const inflightPending = G('OMS_SYNC_PENDING');
+ok('OMS_SYNC_PENDING is defined', typeof inflightPending === 'function');
+ok('a beforeunload listener is registered',
+   /addEventListener\('beforeunload'/.test(main) || /addEventListener\("beforeunload"/.test(main));
+ok('the listener consults the pending state rather than always firing',
+   /beforeunload[\s\S]{0,320}?OMS_SYNC_PENDING\(\)/.test(main),
+   'warning on every close would train people to click through it');
+ok('the listener sets returnValue, which is what actually shows the prompt',
+   /beforeunload[\s\S]{0,400}?returnValue/.test(main));
+ok('OMS_QUEUE_SYNC tracks work in flight',
+   /function OMS_QUEUE_SYNC[\s\S]{0,500}?OMS_SYNC_INFLIGHT\+\+/.test(main) &&
+   /function OMS_QUEUE_SYNC[\s\S]{0,700}?finally/.test(main),
+   'incremented on queue, decremented in finally so a rejection still clears it');
+if (typeof inflightPending === 'function') {
+  sandbox.localStorage.removeItem('cao_oms_v140_pending');
+  ok('nothing pending means no warning', inflightPending() === false);
+  sandbox.localStorage.setItem('cao_oms_v140_pending', '{"state":{}}');
+  ok('unsynced work left on the browser still warns', inflightPending() === true,
+     'the Rev 15 pending key is the other half of this: work saved locally but not confirmed');
+  sandbox.localStorage.removeItem('cao_oms_v140_pending');
+  ok('an unreadable storage does not throw', (() => {
+    try { return inflightPending() === false } catch (e) { return false }
+  })());
+}
+
+console.log('\n# Faster confirmation polling (Rev 21, REV19-002)');
+const pollMs = G('OMS_POLL_MS');
+const waitSrc = typeof G('OMS_WAIT_FOR') === 'function' ? G('OMS_WAIT_FOR').toString() : '';
+ok('OMS_POLL_MS is defined', Array.isArray(pollMs) && pollMs.length > 0);
+if (Array.isArray(pollMs)) {
+  ok('the first check happens well before the old one second', pollMs[0] < 500,
+     'the old loop slept a flat 1000 ms before it looked even once');
+  ok('the schedule backs off rather than hammering the gateway',
+     pollMs[pollMs.length - 1] >= 1000 && pollMs.every((v, i) => i === 0 || v >= pollMs[i - 1]),
+     'each poll is a full state fetch, so early checks are cheap only if they stop being frequent');
+  ok('every delay is a sane positive number', pollMs.every(v => typeof v === 'number' && v >= 100 && v <= 5000),
+     'a zero would spin the loop');
+}
+ok('the flat one-second sleep is gone', !/for\(let n=0;n<15;n\+\+\)\{await new Promise\(r=>setTimeout\(r,1000\)\)/.test(main));
+ok('the wait still gives up rather than looping forever',
+   /throw new Error\('Canonical confirmation is still pending'\)/.test(main) && /waited</.test(waitSrc),
+   'a hung consolidator must still surface as Unsynced');
+ok('the total budget is at least the old fifteen seconds',
+   /2\d000/.test(waitSrc) || /[2-9]\d000/.test(waitSrc),
+   'confirmations were observed at about ten seconds, so the window must comfortably exceed that');
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
