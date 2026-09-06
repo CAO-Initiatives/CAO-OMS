@@ -1537,6 +1537,69 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
     T.setST(savedST);
   }
 
+  // Rev 49 (OMS-049, OMS-028). Retirement on events and SOPs, reusing the
+  // task predicate rather than growing a second vocabulary for one idea.
+  {
+    const retired = G('isRetired');
+    const field = G('omsStatusField');
+    ok('isRetired reads a generic record, not just a task',
+       typeof retired === 'function' && retired({ status: 'Retired' }) === true &&
+       retired({ status: 'Current' }) === false && retired({}) === false && retired(null) === false);
+    ok('omsStatusField is defined', typeof field === 'function');
+    if (typeof field === 'function') {
+      const cur = field('f_x', ''), ret = field('f_x', 'Retired');
+      ok('a record with no status defaults to Current, not Retired',
+         /Current<\/option>/.test(cur) && !/selected[^>]*>Retired/.test(cur));
+      ok('an already-retired record opens on Retired', /selected>Retired/.test(ret));
+      ok('the control says what Retired does and what Delete does',
+         /drops it out of/.test(cur) && /Delete removes it permanently/.test(cur));
+    }
+    // OMS-049: the point of retiring is leaving the numbers people decide from.
+    ok('OMS-049: retired events leave the dashboard 30-day count',
+       /!isRetired\(e\)/.test(String(G('rDash') || '')));
+    ok('OMS-049: and leave the Weekly Brief',
+       /!isRetired\(e\)/.test(String(G('rBrief') || '')));
+    ok('OMS-049: the event form carries the Status control',
+       /f_ev_status/.test(String(G('openEvModal') || '')));
+    ok('OMS-049: and the save path writes it, defaulting to Current',
+       /status:gv\('f_ev_status'\)\|\|'Current'/.test(String(G('saveModal') || '')));
+    // The marker lives in the two builders, not in rCal itself - grid and list
+    // are separate render paths and Rev 34 already shipped a control on one
+    // surface out of two, so assert BOTH rather than the caller.
+    ok('OMS-049: a retired event is marked, not hidden, in the month grid',
+       /bret">Retired/.test(String(G('buildCalGrid') || '')));
+    ok('OMS-049: and in the list view',
+       /bret">Retired/.test(String(G('buildCalList') || '')));
+
+    // OMS-028 / DEC-022: one shared category list, not an SOP taxonomy.
+    const sopModal = String(G('openSopModal') || '');
+    ok('OMS-028: the SOP form offers a category', /f_sop_cat/.test(sopModal));
+    ok('OMS-028: drawn from the SHARED list, not a private one',
+       /eventCategories\(\)/.test(sopModal));
+    ok('OMS-028: and a status', /f_sop_status/.test(sopModal));
+    const cats = G('eventCategories');
+    ok('OMS-028: the shared list is derived from SOPs too, so an SOP-only category survives',
+       /ST\.sops/.test(String(cats || '')));
+    if (typeof cats === 'function') {
+      const savedST = T.st;
+      T.setST({ ...(savedST || {}), events: [], tasks: [],
+                sops: [{ id: 's1', process: 'P', category: 'Only On An SOP' }] });
+      ok('...proven: a category used by nothing but an SOP is still offered',
+         cats().indexOf('Only On An SOP') !== -1);
+      T.setST(savedST);
+    }
+    const rsops = String(G('rSOPs') || '');
+    ok('OMS-028: the SOPs table shows the category', /<th>Category<\/th>/.test(rsops));
+    ok('OMS-028: and can be filtered by it', /sopCat/.test(rsops));
+    ok('OMS-028: a retired SOP is marked rather than hidden',
+       /isRetired\(s\)\?' <span class="b bret">Retired<\/span>'/.test(rsops));
+    const hay2 = G('sopHaystack');
+    if (typeof hay2 === 'function') {
+      ok('OMS-028: search reaches the category as well',
+         hay2({ process: 'P', category: 'Chairs' }).indexOf('chairs') !== -1);
+    }
+  }
+
   // OMS-028: the search must read what the table puts on screen.
   const hay = G('sopHaystack');
   ok('sopHaystack is defined', typeof hay === 'function');

@@ -178,6 +178,58 @@
     "symbol": "f_recurring"
   },
   {
+    "id": "retirement-is-on-the-forms-that-promise-it",
+    "code": "function omsStatusField(",
+    "requires_text": "Events and SOPs retire the same way",
+    "why": "OMS-049 and OMS-028. The guide promises retirement on BOTH forms in one unscoped sentence, which is precisely the shape that let Rev 34 ship the attributed-note control on one dialog out of two while check 12 passed. reachable_from names both forms so the sentence cannot outlive either control.",
+    "reachable_from": [
+      "openEvModal",
+      "openSopModal"
+    ]
+  },
+  {
+    "id": "retired-events-leave-the-counts",
+    "code": "e.category!=='EB OOO'&&!isRetired(e)",
+    "requires_text": "drops out of the 30-day count and the Weekly Brief",
+    "why": "OMS-049. Retiring a record is only meaningful if it leaves the numbers people decide from; a Retired event still counted would be worse than deleting it, because the count would be quietly wrong rather than visibly short. The binding is the filter expression itself, so dropping it from either surface fails.",
+    "reachable_from": [
+      "rDash",
+      "rBrief"
+    ],
+    "symbol": "isRetired"
+  },
+  {
+    "id": "retired-events-stay-visible",
+    "code": "bret\">Retired",
+    "requires_text": "it stays on the calendar marked Retired",
+    "why": "OMS-049. Retiring must not read as deleting, so the record has to remain on screen wearing the label. Grid and list are separate render paths - Rev 34 shipped a control on one surface out of two and check 12 passed - so both builders are named.",
+    "reachable_from": [
+      "buildCalGrid",
+      "buildCalList"
+    ],
+    "symbol": "bret\">Retired"
+  },
+  {
+    "id": "sops-share-the-category-list",
+    "code": "id=\"f_sop_cat\"",
+    "requires_text": "chosen from the same list events and tasks use",
+    "why": "OMS-028, DEC-022. The whole decision was to reuse the existing vocabulary rather than invent an SOP taxonomy. If the control is ever repointed at a private list the sentence promising a shared one has to go with it.",
+    "reachable_from": [
+      "openSopModal"
+    ],
+    "symbol": "f_sop_cat"
+  },
+  {
+    "id": "sop-categories-survive-in-the-list",
+    "code": "...(ST.sops||[])].map(e=>String((e&&e.category)||'').trim())",
+    "requires_text": "a category invented on an SOP is offered everywhere",
+    "why": "OMS-028. eventCategories derives the list from the records that use it, so a collection left out loses its categories the moment nothing else uses them - the exact bug the Rev 23 comment records for tasks. SOPs had to be added for the same reason, and this binds the promise to the code that keeps it.",
+    "reachable_from": [
+      "eventCategories"
+    ],
+    "symbol": "ST.sops"
+  },
+  {
     "id": "cadence-carries-through-a-reimport",
     "code": "function omsCadenceFor(",
     "requires_text": "carried forward",
