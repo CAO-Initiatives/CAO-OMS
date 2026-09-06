@@ -1641,6 +1641,66 @@ if (typeof suggest === 'function') {
      cases.every(([n]) => suggest(n).length >= 12));
 }
 
+// ---------------------------------- Rev 38: every create path assigns an id
+// The 5 Sept 2026 migration gave ids to the gw and rob rows that existed. It
+// could not give one to a row that did not exist yet, and Add Workstream went
+// on pushing {ws,cells,st} with no id for three more revisions. OMS_MAP keeps a
+// record only when id != null, so such a row emits no operation in any
+// direction: it never reaches canonical and it is gone on the next reload.
+console.log('\n# Every create path assigns an id (Rev 38)');
+{
+  // The general form first. A literal pushed into a synced collection must
+  // carry an id, whatever the collection is - this is the assertion that would
+  // have caught rob, and that catches the next one without being rewritten.
+  const pushes = [...main.matchAll(/ST\.([a-zA-Z]+)\.push\(\{([^}]*)/g)];
+  ok('at least one collection push site is present to check', pushes.length > 0);
+  for (const [, coll, body] of pushes) {
+    ok(`ST.${coll}.push assigns an id`, /\bid\s*:/.test(body),
+       `OMS_MAP drops records with no id, so this row could never sync — pushed {${body.slice(0, 60)}`);
+  }
+
+  const robId = G('omsRobId');
+  ok('omsRobId is defined', typeof robId === 'function');
+  if (typeof robId === 'function') {
+    T.setST({ rob: [] });
+    ok('it follows the documented rob-<slug> form',
+       robId('Board Governance Rhythm') === 'rob-board-governance-rhythm', robId('Board Governance Rhythm'));
+    T.setST({ rob: [{ id: 'rob-board-governance-rhythm' }] });
+    ok('a collision gets -2 rather than overwriting',
+       robId('Board Governance Rhythm') === 'rob-board-governance-rhythm-2', robId('Board Governance Rhythm'));
+    T.setST({ rob: [{ id: 'rob-board-governance-rhythm' }, { id: 'rob-board-governance-rhythm-2' }] });
+    ok('and then -3', robId('Board Governance Rhythm') === 'rob-board-governance-rhythm-3');
+    T.setST({ rob: [] });
+    ok('a name with no letters or digits still yields a usable id',
+       /^rob-.+/.test(robId('!!!')) && robId('!!!') !== 'rob-', robId('!!!'));
+  }
+
+  // And the behaviour, through the real handler.
+  const before = T.st;
+  T.setST({ rob: [{ id: 'rob-existing', ws: 'Existing', cells: Array(12).fill(''), st: Array(12).fill('') }] });
+  const openWs = G('openRobWsModal'), saveM = G('saveModal');
+  if (typeof openWs === 'function' && typeof saveM === 'function') {
+    openWs();                                   // Add Workstream — no index
+    ctx.document.getElementById('f_rob_ws').value = 'Digital Health Steering';
+    try { saveM(); } catch (e) { /* renderers need more DOM than this harness has */ }
+    const rows = T.st.rob;
+    ok('Add Workstream creates a row', rows.length === 2, rows.length + ' rows');
+    ok('THE CONTRACT: the new workstream has an id',
+       rows.every(r => r.id != null), JSON.stringify(rows[rows.length - 1] || {}).slice(0, 90));
+    ok('...of the documented form', String((rows[1] || {}).id).startsWith('rob-'), String((rows[1] || {}).id));
+    ok('...so it produces a create operation instead of nothing',
+       (() => { const m = G('OMS_MAP'); return m ? m(rows).size === 2 : false; })(),
+       'OMS_MAP must keep both rows for the diff to see the new one');
+    openWs(0);                                  // Edit — index 0
+    ctx.document.getElementById('f_rob_ws').value = 'Existing, renamed';
+    try { saveM(); } catch (e) {}
+    ok('editing still renames in place and keeps the id',
+       T.st.rob[0].ws === 'Existing, renamed' && T.st.rob[0].id === 'rob-existing',
+       JSON.stringify(T.st.rob[0]).slice(0, 80));
+  }
+  T.setST(before);
+}
+
 // ------------------------------------------- Rev 36: the reconciler, ACTUALLY RUN
 // Every assertion this suite made about the Rev 35 reconciler was a regex over
 // source text, and the reconciler was inert for the whole of Rev 35 regardless.

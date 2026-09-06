@@ -196,5 +196,11 @@
     "code": "function OMS_OP_KEY(",
     "requires_text": "is not sent twice",
     "why": "Rev 37. OMS_BASE advances only on a confirmed sync, so before this a second save recomputed the diff against the same stale base and re-sent the whole outstanding batch. On 5 Sept one ten-operation batch went to the gateway three times in forty-one seconds with identical payloads, which is 51 of the 53 records in conflicts/unresolved. If the suppression is ever removed the guide must stop promising it, or the conflict log fills with noise again and the one place a genuinely lost edit would show becomes unreadable."
+  },
+  {
+    "id": "new-workstream-has-an-id",
+    "code": "function omsRobId(",
+    "requires_text": "now carries an identifier of its own",
+    "why": "Rev 38. Add Workstream pushed a rob row with no id for three revisions after the 5 Sept 2026 migration cleared exactly that condition out of the data. OMS_MAP keeps a record only when id != null and both sides of the sync diff use it, so the row emitted no operation in any direction. If the id assignment is ever dropped, the guide sentence promising the row reaches the shared record has to go with it - and the general push-site sweep in smoke.mjs should fail first."
   }
 ]
