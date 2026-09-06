@@ -650,9 +650,21 @@ ok('the listener consults the pending state rather than always firing',
    'warning on every close would train people to click through it');
 ok('the listener sets returnValue, which is what actually shows the prompt',
    /beforeunload[\s\S]{0,400}?returnValue/.test(main));
+// Sliced rather than distance-matched: the previous form asserted that
+// "finally" appeared within 700 characters of the function name, so it broke
+// when the function grew for an unrelated reason. What matters is that the
+// counter goes up on entry and comes down in a finally, whatever the length.
+const queueSyncSrc = (() => {
+  const i = main.indexOf('function OMS_QUEUE_SYNC');
+  if (i < 0) return '';
+  const j = main.indexOf('return OMS_SYNC_CHAIN}', i);
+  return j < 0 ? '' : main.slice(i, j);
+})();
+ok('OMS_QUEUE_SYNC body was located', queueSyncSrc.length > 0);
 ok('OMS_QUEUE_SYNC tracks work in flight',
-   /function OMS_QUEUE_SYNC[\s\S]{0,500}?OMS_SYNC_INFLIGHT\+\+/.test(main) &&
-   /function OMS_QUEUE_SYNC[\s\S]{0,700}?finally/.test(main),
+   /OMS_SYNC_INFLIGHT\+\+/.test(queueSyncSrc) &&
+   /\.finally\(/.test(queueSyncSrc) &&
+   /OMS_SYNC_INFLIGHT-1/.test(queueSyncSrc),
    'incremented on queue, decremented in finally so a rejection still clears it');
 if (typeof inflightPending === 'function') {
   sandbox.localStorage.removeItem('cao_oms_v140_pending');
@@ -1422,6 +1434,44 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   ok('OMS-029: logging reuses notifications rather than a new collection',
      /ST\.notifications\.unshift/.test(String(logfn || '')) &&
      !/ST\.communications/.test(String(logfn || '')));
+}
+
+// ------------------------------------------------- Rev 35: the sync heals itself
+// Unsynced used to be terminal: OMS_WAIT_FOR gave up after 24 seconds and
+// nothing checked again, so a late confirmation sat unnoticed until a manual
+// reload. On 6 Sept that left a save showing Unsynced for eight minutes while
+// it was already in canonical.
+{
+  ok('a reconciler exists', typeof G('OMS_START_RECONCILE') === 'function');
+  ok('it can be stopped', typeof G('OMS_STOP_RECONCILE') === 'function');
+  ok('adopting canonical is a named step, not inlined twice',
+     typeof G('OMS_ADOPT_CANONICAL') === 'function');
+
+  const rec = String(G('OMS_START_RECONCILE') || '');
+  ok('it refuses to adopt canonical over unsaved edits', /_dirty\.size/.test(rec),
+     'adoption replaces ST wholesale and would destroy work in progress');
+  ok('it reschedules itself rather than running once', /setTimeout\(tick/.test(rec));
+  ok('an expired session stops it, since waiting cannot fix that', /e\.auth/.test(rec));
+
+  const queue = String(main.slice(main.indexOf('function OMS_QUEUE_SYNC'), main.indexOf('function OMS_QUEUE_SYNC') + 1400));
+  ok('landing in Unsynced starts the reconciler', /OMS_START_RECONCILE/.test(queue));
+  ok('a fresh sync stops the reconciler so the two never race',
+     /OMS_SYNC_ONCE\(\)\{OMS_STOP_RECONCILE\(\)/.test(main));
+  ok('the Unsynced message no longer tells people to sit and wait',
+     /keeps checking every few seconds/.test(main) && !/is not yet confirmed in shared OMS\. Do not repeat the edit\.'/.test(main));
+
+  // OMS-015 reachability: Rev 34 shipped Add note on SOPs only.
+  const taskModal = String(G('openTaskModal') || '');
+  ok('OMS-015: Add note is on the TASK form, where notes are actually written',
+     /f_note_add/.test(taskModal) && /omsAddNoteTo/.test(taskModal));
+  const sopModal = String(G('openSopModal') || '');
+  ok('OMS-015: and still on the SOP form', /f_note_add/.test(sopModal));
+
+  // EB OOO is availability, not a meeting.
+  const rcal = String(G('rCal') || '');
+  ok('out of office is hidden from the calendar by default',
+     /calShowOoo/.test(rcal) && /'EB OOO'/.test(rcal));
+  ok('and there is a control to bring it back', /calShowOoo=!calShowOoo/.test(rcal));
 }
 
 const suggest = G('omsSuggestedPassword');

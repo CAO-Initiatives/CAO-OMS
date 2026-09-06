@@ -160,5 +160,17 @@
     "code": "function omsLogCommunication(",
     "requires_text": "Log a call or an email OMS did not send",
     "why": "OMS-029. The control sits inside the Notification Queue modal, which most people open only to send a draft, so it is easy to miss and needs describing."
+  },
+  {
+    "id": "unsynced-self-heals",
+    "code": "function OMS_START_RECONCILE(",
+    "requires_text": "OMS keeps checking every few seconds until it does",
+    "why": "Rev 35. Users were told to wait and not reload while nothing was checking, so a save that had already landed looked stuck. If the reconciler is ever removed, the promise that it recovers on its own must go with it, or the guide becomes an instruction to wait forever."
+  },
+  {
+    "id": "ooo-hidden-is-described",
+    "code": "calShowOoo",
+    "requires_text": "Out-of-office entries are hidden by default",
+    "why": "Rev 35 hides fifteen existing calendar rows. Hiding data without saying so is how people conclude the calendar is wrong."
   }
 ]
