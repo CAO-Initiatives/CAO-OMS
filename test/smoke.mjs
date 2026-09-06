@@ -1460,7 +1460,15 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   ok('the adoption guard is a named predicate, not an inline flag test',
      /OMS_RECONCILE_SAFE\(\)/.test(rec) && typeof G('OMS_RECONCILE_SAFE') === 'function',
      '_dirty cannot distinguish unsent edits from unconfirmed ones');
-  ok('it reschedules itself rather than running once', /setTimeout\(tick/.test(rec));
+  // Rev 39 moved the scheduling into OMS_RECONCILE_SCHEDULE so the backoff has
+  // one home, which broke the previous /setTimeout\(tick/ match on this
+  // function's source. That is the third source-text assertion in this suite to
+  // fail for a rename rather than a regression. The property is proved by
+  // execution further down — a timer is still pending after a simulated hour —
+  // and this is now only a cheap structural check that the step exists.
+  ok('it reschedules itself rather than running once',
+     /OMS_RECONCILE_SCHEDULE\(tick\)/.test(rec) && typeof G('OMS_RECONCILE_SCHEDULE') === 'function',
+     'see "but it has NOT given up" below for the assertion that actually runs it');
   ok('an expired session stops it, since waiting cannot fix that', /e\.auth/.test(rec));
 
   // Was a fixed 1400-character slice from the function's name, which broke the
@@ -1875,6 +1883,42 @@ console.log('\n# The reconciler, executed (Rev 36)');
   await h4.advance(15000);
   ok('once it really lands, the reconciler confirms it', h4.run(`globalThis.__b`) === 'Connected',
      'banner=' + h4.run(`globalThis.__b`) + ' after ' + (h4.calls.state - before4) + ' polls');
+
+  // ---- Rev 39: the watch must be cheap as well as persistent
+  // Every reconciler tick is one /api/state, which is one GitHub contents read
+  // against an installation limit of 5,000 an hour, shared with sign-in, every
+  // save and the consolidator's own pushes. A flat 3 s poll cost 1,200 an hour
+  // per stuck client. Rev 36 made that real load for the first time by making
+  // the reconciler actually fire.
+  {
+    const ms = G('OMS_RECONCILE_MS');
+    ok('the reconcile interval is a backoff, not a single number', Array.isArray(ms), typeof ms);
+    if (Array.isArray(ms)) {
+      ok('it starts fast enough to feel immediate', ms[0] <= 3000, ms[0] + 'ms');
+      ok('it is non-decreasing', ms.every((v, i) => i === 0 || v >= ms[i - 1]), JSON.stringify(ms));
+      ok('it slows to minutes rather than seconds', ms[ms.length - 1] >= 300000, ms[ms.length - 1] + 'ms');
+    }
+  }
+
+  // Measured, not asserted from the table: drive a stuck client for one hour.
+  const h6 = build();
+  h6.run(`ST.tasks[0].title='Stuck';_dirty.add('tasks');`);
+  const p6 = h6.run(`OMS_QUEUE_SYNC()`);
+  await h6.advance(40000);
+  try { await p6; } catch (_) {}
+  ok('the client is in the reconciling state', h6.run(`globalThis.__b`) === 'Unsynced');
+  const base6 = h6.calls.state;
+  await h6.advance(3600 * 1000);                 // one hour, canonical never moves
+  const perHour = h6.calls.state - base6;
+  ok('an unconfirmed client costs far less than the 5,000/hour budget allows',
+     perHour <= 60, perHour + ' /api/state calls in the first hour (flat 3s would be 1200)');
+  ok('but it has NOT given up — a hard stop would restore the terminal Unsynced',
+     h6.timers.size > 0, 'no timer pending: the watch stopped');
+  // ...and it still heals when canonical finally catches up, an hour late.
+  h6.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Stuck', _version: 2 }] });
+  await h6.advance(700 * 1000);
+  ok('a confirmation an hour later is still noticed', h6.run(`globalThis.__b`) === 'Connected',
+     'banner=' + h6.run(`globalThis.__b`));
 
   // ---- Rev 37 / F2b: a second save must not re-send the outstanding batch
   // The live evidence: tasks/mql45rre6kn went to the gateway three times in

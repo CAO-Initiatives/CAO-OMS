@@ -202,5 +202,11 @@
     "code": "function omsRobId(",
     "requires_text": "now carries an identifier of its own",
     "why": "Rev 38. Add Workstream pushed a rob row with no id for three revisions after the 5 Sept 2026 migration cleared exactly that condition out of the data. OMS_MAP keeps a record only when id != null and both sides of the sync diff use it, so the row emitted no operation in any direction. If the id assignment is ever dropped, the guide sentence promising the row reaches the shared record has to go with it - and the general push-site sweep in smoke.mjs should fail first."
+  },
+  {
+    "id": "reconcile-watch-slows-not-stops",
+    "code": "function OMS_RECONCILE_SCHEDULE(",
+    "requires_text": "The checking slows down, it does not stop",
+    "why": "Rev 39. Every reconciler tick is one /api/state, which is one GitHub contents read against an installation limit of 5,000 an hour that is shared with sign-in, every save and the consolidator's own pushes. Rev 36 made the reconciler fire for the first time and its flat three-second poll became 1,200 reads an hour per stuck client, uncapped - four of them would have taken the whole system down in a way that would not have looked like polling. The backoff is what makes an indefinite watch affordable, so if it is ever removed the promise that OMS keeps watching has to be re-examined rather than silently made expensive again."
   }
 ]
