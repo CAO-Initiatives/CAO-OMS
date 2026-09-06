@@ -28,6 +28,15 @@ node test/smoke.mjs oms.html      # behavior — 268 assertions
 
 Every non-cosmetic change **must** bump the version badge, append an `OMS_REV_LOG` entry, and touch the embedded User Guide. The gate enforces all three; that is deliberate.
 
+**Descriptive text must be tied to the code it describes.** Standing instruction. The guide hash check proves the guide *changed*, not that it became *true*, and nothing else tied a tooltip or a guide line to the behaviour behind it — so text drifted silently and stayed wrong until somebody read it. In one day that produced a tooltip still instructing the exact action that caused the OMS-003 defect, a control promising a forced password change it could not deliver, and task tooltips listing a field set two revisions out of date.
+
+Gate check 12 (`scripts/text_claims.py`, manifest `test/text-claims.json`) enforces it in both directions:
+
+- `{"text": …, "requires_code": …}` — if the interface says it, the code must do it.
+- `{"code": …, "requires_text": …}` — if the code does it, something must describe it.
+
+**When you add a control, a field, or a status, add a binding for it.** When you remove one, the binding becomes stale and the gate says so. Text is checked outside `OMS_REV_LOG`, which is history and is never rewritten. `test/text_claims_negative.py` feeds the checker real drift and must keep passing; a gate that only ever passes is the failure this project already had once, in check 4.
+
 ## Things that will bite you
 
 **`OMS_MAP` drops records with no `id`.** Both sides of the sync diff use it, so a collection whose records lack ids emits **zero operations in every direction** — no create, no update, no delete — while the UI reports success. This is not hypothetical: `gw` (CAO Visibility) and `rob` (the Cadence grid) had never synced, in either direction, until they were migrated on 5 Sept 2026. Rev 15 added a guard that reports Unsynced and names any collection still holding id-less records. **Do not remove it.**

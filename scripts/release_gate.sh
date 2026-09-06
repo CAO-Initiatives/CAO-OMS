@@ -183,6 +183,23 @@ else
   fail "11 gate4_preflight.py missing from the repository"
 fi
 
+# ---------- 12. descriptive text is backed by the code ----------
+# Standing instruction, 6 Sept 2026. The guide hash check proves the guide
+# CHANGED; it cannot prove it became true. This ties declared claims in
+# tooltips, the User Guide and on-screen instructions to the code behind them,
+# in both directions: a claim the code does not support fails, and a capability
+# nothing describes fails. See scripts/text_claims.py for what went wrong
+# without it.
+if [ -f scripts/text_claims.py ]; then
+  if python3 scripts/text_claims.py; then
+    pass "12 descriptive text matches the code"
+  else
+    fail "12 descriptive text contradicts the code (see above)"
+  fi
+else
+  fail "12 scripts/text_claims.py missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"

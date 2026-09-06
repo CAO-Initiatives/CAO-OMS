@@ -1,0 +1,122 @@
+[
+  {
+    "id": "cadence-single-click-removed",
+    "text": "Single-click a cell to cycle",
+    "requires_code": "onclick=\"cycleRob",
+    "why": "Rev 14 removed single-click status cycling because it WAS the OMS-003 defect: a double-click fires two single clicks first, so following the instruction advanced status twice across 84 live cells. The tooltip kept teaching it for eleven revisions."
+  },
+  {
+    "id": "cadence-single-click-removed-guide",
+    "text": "Single click a month cell to cycle",
+    "requires_code": "onclick=\"cycleRob",
+    "why": "Same claim in the User Guide, which for eleven revisions contradicted its own troubleshooting section on the same page."
+  },
+  {
+    "id": "temp-password-must-change",
+    "text": "User must set a new password on next login",
+    "requires_code": "function adminGenTempPw(",
+    "why": "The Admin Console promised this while writing a plaintext value that authentication never read. The control was deleted in Rev 29; the promise must not return without something behind it. The binding was tightened on 6 Sept 2026: it named the bare identifier, which the Rev 29 comment recording the deletion also contains, so the guard was satisfied by the note explaining that nothing implements it. Binding values must be code-shaped - the code search covers comments and the revision log too."
+  },
+  {
+    "id": "admin-console-sets-initial-password",
+    "text": "and initial password.",
+    "requires_code": "id=\"au_pw\"",
+    "why": "The add-user tooltip listed a password field that had been removed, on a form that creates a directory entry rather than a sign-in account. Rev 32 restored the field and made it real: the binding now proves the promise is kept rather than that it was withdrawn."
+  },
+  {
+    "id": "task-category-is-described",
+    "code": "id=\"f_task_cat\"",
+    "requires_text": "category",
+    "why": "Rev 23 gave tasks a category. The Add and Edit tooltips went on listing the old field set for two revisions."
+  },
+  {
+    "id": "task-dependency-is-described",
+    "code": "id=\"f_dependsOn\"",
+    "requires_text": "waiting on",
+    "why": "Rev 24 added a prerequisite field. Same omission as the category."
+  },
+  {
+    "id": "event-end-date-is-described",
+    "code": "id=\"f_enddate\"",
+    "requires_text": "end date",
+    "why": "Rev 17 added End Date and End Time. The Add Event tooltip described neither until Rev 29."
+  },
+  {
+    "id": "recurring-flag-is-described",
+    "code": "id=\"f_recurring\"",
+    "requires_text": "Cadence for anything that repeats",
+    "why": "Rev 17 added the recurring flag; nothing described it."
+  },
+  {
+    "id": "category-rename-moves-tasks",
+    "code": "(ST.tasks||[]).forEach(x=>{if(x&&String(x.category||'')===from)",
+    "requires_text": "every event AND task",
+    "why": "Rev 23 made renaming a category move tasks too. The tooltip still said it updated every event, understating the blast radius of a merge."
+  },
+  {
+    "id": "checklist-export-is-described",
+    "code": "function exportChecklist(",
+    "requires_text": "checklist",
+    "why": "A control users cannot find is a control that was not built."
+  },
+  {
+    "id": "reminder-action-is-described",
+    "code": "function omsRemindDueSoon(",
+    "requires_text": "due in the next three days",
+    "why": "The reminder horizon is a promise about behaviour and must match the code that implements it."
+  },
+  {
+    "id": "sortable-columns-are-described",
+    "code": "function omsSortTasks(",
+    "requires_text": "Sort any column",
+    "why": "Rev 23 made every column sortable and said so nowhere until Rev 29."
+  },
+  {
+    "id": "blocked-status-is-described",
+    "code": "function isBlocked(",
+    "requires_text": "Blocked",
+    "why": "A status a user will see on screen has to be explained somewhere."
+  },
+  {
+    "id": "forced-password-change-is-described",
+    "code": "mustChangePassword",
+    "requires_text": "change it before they can use OMS",
+    "why": "Initial passwords are guessable by design, so the forced change is the control that makes them safe. If it is ever removed, the text promising it must go at the same time."
+  },
+  {
+    "id": "sign-in-management-is-described",
+    "code": "function omsToggleSignIn(",
+    "requires_text": "Disable sign-in",
+    "why": "Rev 30 made deactivation block sign-in. Before that it flipped a directory flag only, which read as revoked access and was not."
+  },
+  {
+    "id": "retired-status-is-described",
+    "code": "function isRetired(",
+    "requires_text": "Retired",
+    "why": "Rev 17 added a status that changes how completion is counted. It must stay explained."
+  },
+  {
+    "id": "unsynced-state-is-described",
+    "code": "OMS_UNSYNCABLE",
+    "requires_text": "Unsynced",
+    "why": "The id-less-record guard surfaces a state the user has to act on. If the guard exists, the guide must say what the state means."
+  },
+  {
+    "id": "add-user-can-issue-a-signin",
+    "code": "id=\"au_signin\"",
+    "requires_text": "Add User creates both",
+    "why": "Rev 32 made Add User create a sign-in as well as a directory entry. The form's own note had claimed the opposite for an hour after Rev 30 made it false."
+  },
+  {
+    "id": "add-user-not-signin-only",
+    "text": "This does NOT create a sign-in account",
+    "forbids_code": "id=\"au_signin\"",
+    "why": "The Add User button's own tooltip, and the third stale claim found in one day. It was true until Rev 32 put a sign-in checkbox on the very form it describes. Nothing tied the button's description to the form's fields, so it would have gone on telling administrators the opposite of what the button does."
+  },
+  {
+    "id": "signins-not-gateway-only",
+    "text": "Sign-in accounts are issued separately, through the gateway",
+    "forbids_code": "omsAccountAction('create'",
+    "why": "True until Rev 30 gave the client an account-creation path. The claim must not return while that path exists."
+  }
+]

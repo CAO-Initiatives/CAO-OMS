@@ -56,6 +56,13 @@ const FIELDS = {};
 const el = (id) => ({ _id: id, textContent: '', innerHTML: '', className: '', style: {},
                     get value() { return FIELDS[id] !== undefined ? FIELDS[id] : ''; },
                     set value(v) { FIELDS[id] = v; },
+                    // Rev 32 put a checkbox on the add-user form and gc() reads
+                    // .checked. Without this every box reads unticked and the
+                    // sign-in branch could never be exercised. dataset backs the
+                    // "stop suggesting once it is typed over" behaviour.
+                    get checked() { return !!FIELDS['@' + id]; },
+                    set checked(v) { FIELDS['@' + id] = !!v; },
+                    dataset: {},
                     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
                     appendChild: noop, setAttribute: noop, getAttribute: () => null,
                     addEventListener: noop, querySelector: () => null, querySelectorAll: () => [],
@@ -1321,6 +1328,132 @@ ok('the guide explains the lockout guards',
 // ================================================================ REV 31
 console.log('\n# The suggested password can be dictated (OMS-049)');
 const suggest = G('omsSuggestedPassword');
+
+// ---------------------------------------------------------------- Rev 32: Add User issues the sign-in
+// Until Rev 32 this button wrote a directory row and stopped, so somebody could
+// be "added" and still not be able to sign in. These exercise the function
+// rather than reading it: the ORDER is the whole point of the fix.
+const E = id => ctx.document.getElementById(id);
+{
+  const saveUser = G('saveAdminUser');
+  ok('saveAdminUser is defined', typeof saveUser === 'function');
+  ok('saveAdminUser is async - it awaits the gateway before writing the directory',
+     typeof saveUser === 'function' && saveUser.constructor.name === 'AsyncFunction');
+
+  const toggle = G('omsToggleAddSignIn');
+  ok('omsToggleAddSignIn is defined', typeof toggle === 'function');
+  if (typeof toggle === 'function') {
+    toggle(false);
+    ok('unticking the box hides the password field', E('au_pw_wrap').style.display === 'none');
+    toggle(true);
+    ok('reticking it shows the password field again', E('au_pw_wrap').style.display === '');
+  }
+
+  // The suggestion follows the name until an administrator types over it.
+  const syncPw = G('omsSyncAddPw');
+  ok('omsSyncAddPw is defined', typeof syncPw === 'function');
+  if (typeof syncPw === 'function' && typeof suggest === 'function') {
+    Object.keys(FIELDS).forEach(k => delete FIELDS[k]);
+    E('au_pw').dataset = {};
+    FIELDS['au_name'] = 'Clare Il’Giovine';
+    syncPw();
+    ok('the password fills in from the name', FIELDS['au_pw'] === suggest('Clare Il’Giovine'));
+    ok('and it carries no punctuation that cannot be dictated',
+       /^[A-Za-z]+-OMS-2026!$/.test(FIELDS['au_pw'] || ''));
+    FIELDS['au_name'] = 'Jane Westgate';
+    syncPw();
+    ok('it keeps following the name while untouched', FIELDS['au_pw'] === suggest('Jane Westgate'));
+    E('au_pw').dataset.touched = '1';
+    FIELDS['au_name'] = 'Somebody Else';
+    syncPw();
+    ok('and stops the moment it is typed over', FIELDS['au_pw'] === suggest('Jane Westgate'));
+  }
+
+  // Exercise the save path with the gateway call stubbed at its seam.
+  const realAction = ctx.omsAccountAction, realSave = ctx.save;
+  const realClose = ctx.closeModal, realR = ctx.rAdmin;
+  const order = [], calls = [], seenDir = [];
+  const fill = (name, email, pw, wantSignIn) => {
+    Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;
+    order.length = 0; calls.length = 0; seenDir.length = 0;
+    E('au_pw').dataset = {};
+    FIELDS['au_name'] = name; FIELDS['au_email'] = email;
+    FIELDS['au_role'] = 'Program Manager'; FIELDS['au_access'] = 'editor';
+    FIELDS['au_pw'] = pw; FIELDS['@au_signin'] = wantSignIn;
+  };
+
+  if (typeof saveUser === 'function' && T.st) {
+    ctx.save = () => order.push('directory');
+    ctx.closeModal = noop;
+    ctx.rAdmin = noop;
+    // Record the directory's size AT THE MOMENT the gateway is called. Watching
+    // save() instead is not enough: moving the ST.people.push earlier keeps
+    // save() last and the ordering would still look right.
+    ctx.omsAccountAction = async (a, p) => {
+      calls.push([a, p]); order.push('account');
+      seenDir.push((T.st.people || []).length);
+      return { ok: true };
+    };
+
+    T.st.people = [];
+    fill('Jane Westgate', 'Jane.Westgate@advocatehealth.org', 'Westgate-OMS-2026!', true);
+    await saveUser('');
+    ok('a sign-in is requested when the box is ticked', calls.length === 1 && calls[0][0] === 'create');
+    ok('the sign-in id is the email address, lowercased',
+       calls.length === 1 && calls[0][1].id === 'jane.westgate@advocatehealth.org');
+    ok('the access level chosen on the form is the one issued',
+       calls.length === 1 && calls[0][1].role === 'editor');
+    ok('the password on the form is the one issued',
+       calls.length === 1 && calls[0][1].password === 'Westgate-OMS-2026!');
+    ok('the account is created BEFORE the directory entry is written',
+       order[0] === 'account' && order[1] === 'directory' && seenDir[0] === 0);
+    ok('the person reaches the directory', (T.st.people || []).some(p => p.name === 'Jane Westgate'));
+    ok('and the credential is handed over exactly once, in clear',
+       ALERTS.filter(a => a.indexOf('Westgate-OMS-2026!') > -1).length === 1);
+
+    // The failure that matters: the gateway refuses, so NOTHING is added.
+    ctx.omsAccountAction = async () => { throw new Error('id already in use'); };
+    T.st.people = [];
+    fill('Terri Yates', 'Terri.Yates@advocatehealth.org', 'Yates-OMS-2026!', true);
+    await saveUser('');
+    ok('when the sign-in cannot be issued, no directory entry is left behind',
+       (T.st.people || []).length === 0 && order.indexOf('directory') === -1);
+    ok('and the administrator is told nothing was added',
+       ALERTS.some(a => /Nothing was added/i.test(a)));
+
+    // A short password never reaches the gateway.
+    ctx.omsAccountAction = async (a, p) => {
+      calls.push([a, p]); order.push('account'); seenDir.push((T.st.people || []).length); return { ok: true };
+    };
+    T.st.people = [];
+    fill('Terry Hales', 'Terry.Hales@advocatehealth.org', 'short', true);
+    await saveUser('');
+    ok('a password under 12 characters is refused before the gateway is called',
+       calls.length === 0 && (T.st.people || []).length === 0);
+    ok('and the reason names the length', ALERTS.some(a => /12 characters/.test(a)));
+
+    // Directory-only: some people need to be assignable and nothing more.
+    T.st.people = [];
+    fill('Erich Huang', 'Erich.Huang@advocatehealth.org', '', false);
+    await saveUser('');
+    ok('unticking the box adds the person without issuing a sign-in',
+       calls.length === 0 && (T.st.people || []).some(p => p.name === 'Erich Huang'));
+    ok('and no credential is read out for an account that was not created',
+       !ALERTS.some(a => /Password:/.test(a)));
+
+    // Editing an existing person must not mint a second account.
+    T.st.people = [{ id: 'jane-westgate', name: 'Jane Westgate',
+                     email: 'jane.westgate@advocatehealth.org', role: 'PM', accessRole: 'editor' }];
+    fill('Jane Westgate', 'Jane.Westgate@advocatehealth.org', 'Westgate-OMS-2026!', true);
+    await saveUser('jane-westgate');
+    ok('editing an existing person issues no new account', calls.length === 0);
+    ok('and the edit still lands', (T.st.people[0] || {}).role === 'Program Manager');
+
+    ctx.omsAccountAction = realAction; ctx.save = realSave;
+    ctx.closeModal = realClose; ctx.rAdmin = realR;
+    Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;
+  }
+}
 ok('omsSuggestedPassword is defined', typeof suggest === 'function');
 if (typeof suggest === 'function') {
   // Must agree with lastNameOf in the gateway's make-users.mjs. If these two
