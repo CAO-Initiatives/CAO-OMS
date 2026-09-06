@@ -1137,6 +1137,83 @@ if (typeof mkRem === 'function') {
      'otherwise every click would add another copy of the same reminder');
 }
 
+
+// ================================================================ REV 25
+// Two items that were sized L and were actually S, because the data already
+// existed and nothing rendered it. Assertions written before the build.
+
+console.log('\n# Editor attribution resolves a raw actor id (OMS-022)');
+const actorName = G('omsActorName');
+ok('omsActorName is defined', typeof actorName === 'function');
+if (typeof actorName === 'function') {
+  T.setST({ events: [], tasks: [], sops: [], notifications: [], assignmentHistory: [],
+    people: [
+      { id: 'hossam-elsaie', name: 'Hossam Elsaie', email: 'hossam.elsaie@advocatehealth.org' },
+      { id: 'ari-ball', name: 'Ari Ball', email: 'Ariana.Ball@advocatehealth.org' },
+    ] });
+  ok('an oms- prefixed slug resolves to a display name',
+     actorName('oms-hossam-elsaie') === 'Hossam Elsaie');
+  ok('a bare slug resolves too', actorName('hossam-elsaie') === 'Hossam Elsaie');
+  // After OMS-043 the account id becomes an email, so _updatedBy will read
+  // oms-<email>. Resolution has to survive that change without an edit.
+  ok('an email-shaped actor id resolves, ready for OMS-043',
+     actorName('oms-hossam.elsaie@advocatehealth.org') === 'Hossam Elsaie');
+  ok('resolution is case-insensitive on the email',
+     actorName('oms-ariana.ball@advocatehealth.org') === 'Ari Ball',
+     'the directory stores Ariana.Ball with capitals');
+  ok('an unknown actor degrades to the raw id, not to blank',
+     actorName('oms-someone-else') === 'someone-else',
+     'showing nothing would hide that the record WAS edited by somebody');
+  ok('an empty actor yields an empty string', actorName('') === '' && actorName(null) === '');
+}
+
+console.log('\n# The attribution stamp (OMS-022)');
+const stamp = G('recordStamp');
+ok('recordStamp is defined', typeof stamp === 'function');
+if (typeof stamp === 'function') {
+  const s1 = stamp({ _updatedBy: 'oms-hossam-elsaie', _updatedAt: '2026-09-05T23:10:41Z' });
+  ok('the stamp names who and when', /Hossam Elsaie/.test(s1) && /2026/.test(s1), s1);
+  ok('a record with no metadata yields nothing', stamp({ id: 'x' }) === '');
+  ok('a null record does not throw', stamp(null) === '');
+  ok('a partial stamp still renders', /Hossam Elsaie/.test(stamp({ _updatedBy: 'oms-hossam-elsaie' })));
+}
+ok('the sync payload still strips the metadata', /delete o\._updatedBy/.test(main),
+   'displaying it must not start round-tripping server-owned fields back as client edits');
+
+console.log('\n# Assignment history is finally rendered (OMS-021)');
+const histFor = G('assignmentHistoryFor');
+ok('assignmentHistoryFor is defined', typeof histFor === 'function');
+if (typeof histFor === 'function') {
+  T.setST({ events: [], sops: [], notifications: [], people: [],
+    tasks: [{ id: 't1', title: 'A task' }],
+    assignmentHistory: [
+      { id: 'h1', taskId: 't1', type: 'assignment_created', owner: 'Ari Ball',   at: '2026-07-01T10:00:00Z' },
+      { id: 'h3', taskId: 't1', type: 'assignment_changed', owner: 'Maggie Scirica', at: '2026-08-01T10:00:00Z' },
+      { id: 'h2', taskId: 't2', type: 'assignment_created', owner: 'Terry Hales', at: '2026-07-15T10:00:00Z' },
+    ] });
+  const rows = histFor('t1');
+  ok('history is filtered to the task', rows.length === 2);
+  ok('newest first', rows[0].id === 'h3', rows.map(r => r.id).join(','));
+  ok('an unknown task yields an empty list', histFor('nope').length === 0);
+  ok('it does not mutate the stored order',
+     T.st.assignmentHistory[0].id === 'h1', 'sorting a copy, not the collection');
+}
+const histHtml = G('assignmentHistoryHtml');
+ok('assignmentHistoryHtml is defined', typeof histHtml === 'function');
+if (typeof histHtml === 'function' && typeof histFor === 'function') {
+  const h = histHtml(histFor('t1'));
+  ok('the history table renders rows', /<table>/.test(h) && (h.match(/<tr>/g) || []).length >= 3);
+  ok('a reassignment is labelled as one', /Reassigned/.test(h));
+  ok('a first assignment is labelled differently', /Assigned/.test(h));
+  ok('nothing renders for an empty history', histHtml([]) === '');
+  ok('no undefined leaks in', !/undefined/.test(h));
+}
+ok('the task dialog shows history inline, not in a second overlay',
+   /assignmentHistoryHtml\(assignmentHistoryFor\(/.test(main),
+   'CLAUDE.md: openModal replaces #mbody, so a second dialog would destroy the task being edited');
+ok('the Admin Console carries the full history', /Assignment History/.test(main));
+ok('the attribution stamp reaches the task dialog', /recordStamp\(/.test(main));
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
