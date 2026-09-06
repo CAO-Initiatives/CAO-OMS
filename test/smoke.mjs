@@ -1266,6 +1266,35 @@ if (typeof signoff === 'string') {
 ok('assignment, handoff and reminder drafts all use it',
    (main.match(/OMS_MAIL_SIGNOFF/g) || []).length >= 4);
 
+
+// ================================================================ REV 27
+console.log('\n# One builder for every OMS subject line (Rev 27)');
+const subj = G('omsSubject');
+ok('omsSubject is defined', typeof subj === 'function');
+if (typeof subj === 'function') {
+  const t = { title: 'Draft the deck', owner: 'Ari Ball', due: '2026-09-08', priority: 'Medium' };
+  ok('the standard order is OMS, priority, due, kind, task, owner',
+     subj('New assignment', t) === 'OMS | Due Tue 8 Sep 2026 | New assignment | Draft the deck | Ari Ball',
+     subj('New assignment', t));
+  ok('HIGH PRIORITY is inserted for a high-priority task',
+     /^OMS \| HIGH PRIORITY \| Due /.test(subj('Reminder', { ...t, priority: 'High' })));
+  ok('and omitted otherwise', !/HIGH PRIORITY/.test(subj('Reminder', t)));
+  ok('a missing due date reads "not set"', /Due not set/.test(subj('Reminder', { ...t, due: '' })));
+  ok('a missing owner reads Unassigned', /Unassigned$/.test(subj('Reminder', { ...t, owner: '' })));
+  ok('a missing title reads Untitled task', /Untitled task/.test(subj('Reminder', { ...t, title: '' })));
+}
+// The regression this release exists to prevent: Rev 24 built handoff and
+// reminder subjects inline and both silently dropped HIGH PRIORITY, so an
+// urgent task was nudged with a subject that looked routine.
+ok('the subject standard is built in exactly ONE place',
+   (main.match(/'OMS \| /g) || []).length === 1,
+   'three copies is how the HIGH PRIORITY marker went missing from two of them');
+ok('notificationSubject still exists for its callers', /function notificationSubject\(/.test(main));
+if (typeof G('notificationSubject') === 'function') {
+  ok('notificationSubject delegates rather than duplicating',
+     /return omsSubject\(/.test(G('notificationSubject').toString()));
+}
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
