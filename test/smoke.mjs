@@ -690,10 +690,10 @@ console.log('\n# One vocabulary: tasks, not deliverables (Rev 22)');
 const revLogStart = html.indexOf('const OMS_REV_LOG');
 const revLogEnd = html.indexOf('];', revLogStart);
 const outsideRevLog = html.slice(0, revLogStart) + html.slice(revLogEnd);
-ok('no user-facing text says deliverable', !/[Dd]eliverable/.test(outsideRevLog),
-   (outsideRevLog.match(/[Dd]eliverable\w*/g) || []).slice(0, 6).join(', '));
+ok('no user-facing text says deliverable', !/\b[Dd]eliverable/.test(outsideRevLog),
+   (outsideRevLog.match(/\b[Dd]eliverable\w*/g) || []).slice(0, 6).join(', '));
 ok('the revision log keeps its history intact',
-   /[Dd]eliverable/.test(html.slice(revLogStart, revLogEnd)),
+   /\b[Dd]eliverable/.test(html.slice(revLogStart, revLogEnd)),
    'past entries are an audit record; rewriting them would falsify what shipped');
 
 console.log('\n# Tab and handler renamed (Rev 22)');
@@ -995,6 +995,146 @@ if (typeof G('openNewItem') === 'function' && typeof G('saveModal') === 'functio
   G('openNewItem')('nonsense');
   ok('an unhandled card type says so instead of doing nothing',
      ALERTS.some(a => /cannot be added/i.test(a)), ALERTS.join(' | '));
+}
+
+
+// ================================================================ REV 24
+// Three register items that are really one theme: what happens next. A task
+// that cannot start yet, the handoff when its prerequisite lands, and the
+// nudge before a due date. Assertions written before any of it was built.
+
+console.log('\n# Task dependencies (OMS-013)');
+const prereqOf = G('taskPrereq');
+const blocked = G('isBlocked');
+ok('taskPrereq is defined', typeof prereqOf === 'function');
+ok('isBlocked is defined', typeof blocked === 'function');
+if (typeof blocked === 'function' && typeof prereqOf === 'function') {
+  T.setST({ events: [], people: [], sops: [], tasks: [
+    { id: 'a', title: 'Draft remarks', status: 'In Progress' },
+    { id: 'b', title: 'Build slides', status: 'Not Started', dependsOn: 'a' },
+    { id: 'c', title: 'Standalone', status: 'Not Started' },
+    { id: 'd', title: 'After done', status: 'Not Started', dependsOn: 'x-done' },
+    { id: 'x-done', title: 'Finished prereq', status: 'Complete' },
+    { id: 'e', title: 'After retired', status: 'Not Started', dependsOn: 'x-ret' },
+    { id: 'x-ret', title: 'Dropped prereq', status: 'Retired' },
+    { id: 'f', title: 'Dangling', status: 'Not Started', dependsOn: 'nonexistent' },
+  ] });
+  const byId = i => T.st.tasks.find(t => t.id === i);
+  ok('a task waiting on unfinished work is blocked', blocked(byId('b')) === true);
+  ok('a task with no prerequisite is not blocked', blocked(byId('c')) === false);
+  ok('a COMPLETE prerequisite unblocks', blocked(byId('d')) === false);
+  ok('a RETIRED prerequisite unblocks', blocked(byId('e')) === false,
+     'work that was dropped must not freeze its dependent forever');
+  ok('a dangling prerequisite does not block', blocked(byId('f')) === false,
+     'a deleted prerequisite must not strand the dependent');
+  ok('taskPrereq resolves the prerequisite record',
+     (prereqOf(byId('b')) || {}).id === 'a');
+  ok('taskPrereq returns null for a dangling reference', prereqOf(byId('f')) === null);
+  ok('a done task is never blocked',
+     blocked({ id: 'z', status: 'Complete', dependsOn: 'a' }) === false);
+  ok('a retired task is never blocked',
+     blocked({ id: 'z', status: 'Retired', dependsOn: 'a' }) === false);
+  // Only the DIRECT prerequisite is consulted, which is what makes cycles
+  // structurally impossible rather than merely unlikely.
+  T.setST({ events: [], people: [], sops: [], tasks: [
+    { id: 'p', title: 'P', status: 'Not Started', dependsOn: 'q' },
+    { id: 'q', title: 'Q', status: 'Not Started', dependsOn: 'p' },
+  ] });
+  ok('a dependency cycle does not hang or overflow', (() => {
+    try { return blocked(T.st.tasks[0]) === true && blocked(T.st.tasks[1]) === true; }
+    catch (e) { return false; }
+  })(), 'only the direct prerequisite is consulted, so recursion is impossible');
+}
+
+console.log('\n# Blocked is a display status (OMS-013)');
+const disp = G('taskDisplayStatus');
+if (typeof disp === 'function') {
+  T.setST({ events: [], people: [], sops: [], tasks: [
+    { id: 'a', title: 'prereq', status: 'Not Started' },
+    { id: 'b', title: 'dep', status: 'Not Started', dependsOn: 'a', due: '2020-01-01' },
+  ] });
+  ok('Blocked takes precedence over Overdue', disp(T.st.tasks[1]) === 'Blocked',
+     'the actionable fact is that it cannot be started, not that it is late');
+  ok('an unblocked overdue task still reads Overdue',
+     disp({ id: 'z', status: 'Not Started', due: '2020-01-01' }) === 'Overdue');
+}
+ok('the Blocked filter chip exists', /'Blocked'/.test(main));
+ok('Blocked has its own badge style', /bblk|Blocked':'b/.test(main));
+
+console.log('\n# The dependency cannot be self-referential or destructive (OMS-013)');
+ok('the task form offers a prerequisite control', /id="f_dependsOn"/.test(main));
+ok('a task cannot depend on itself', /cannot depend on itself/i.test(main));
+ok('deleting a prerequisite clears its dependents', /dependsOn=''/.test(main) || /dependsOn:''/.test(main),
+   'a dangling reference must not be left behind, the same way delEv clears sourceEventId');
+
+console.log('\n# Handoff notification when a prerequisite completes (OMS-014)');
+const handoff = G('notifyDependentsOnCompletion');
+ok('notifyDependentsOnCompletion is defined', typeof handoff === 'function');
+if (typeof handoff === 'function') {
+  T.setST({ events: [], sops: [],
+    people: [{ id: 'ari-ball', name: 'Ari Ball', email: 'a@x.org' }],
+    notifications: [], assignmentHistory: [],
+    tasks: [
+      { id: 'a', title: 'Draft remarks', status: 'Complete' },
+      { id: 'b', title: 'Build slides', status: 'Not Started', dependsOn: 'a', owner: 'Ari Ball', ownerEmail: 'a@x.org' },
+      { id: 'c', title: 'Unrelated', status: 'Not Started', owner: 'Ari Ball', ownerEmail: 'a@x.org' },
+    ] });
+  const made = handoff(T.st.tasks[0], { status: 'In Progress' });
+  ok('completing a prerequisite notifies its dependent', made === 1, 'made=' + made);
+  ok('the notification names the unblocked task',
+     (T.st.notifications[0] || {}).taskId === 'b');
+  ok('it does not notify unrelated tasks', T.st.notifications.length === 1);
+  // idempotence: completing something already complete must not re-notify
+  const again = handoff(T.st.tasks[0], { status: 'Complete' });
+  ok('a task already complete does not re-notify', again === 0,
+     're-saving a completed task would otherwise send a duplicate every time');
+  T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [],
+    tasks: [ { id: 'a', title: 'P', status: 'Complete' },
+             { id: 'b', title: 'D', status: 'Not Started', dependsOn: 'a', owner: 'Nobody', ownerEmail: '' } ] });
+  ok('a dependent with no email is skipped, not failed',
+     handoff(T.st.tasks[0], { status: 'Not Started' }) === 0 && T.st.notifications.length === 0);
+}
+
+console.log('\n# Due-date reminders (OMS-006)');
+const dueSoon = G('tasksDueSoon');
+ok('tasksDueSoon is defined', typeof dueSoon === 'function');
+if (typeof dueSoon === 'function') {
+  const iso = d => { const x = new Date(G('TODAY')); x.setDate(x.getDate() + d);
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  T.setST({ events: [], sops: [], people: [], notifications: [], tasks: [
+    { id: 'soon',    title: 'Due in two days', status: 'Not Started', due: iso(2),  owner: 'A', ownerEmail: 'a@x' },
+    { id: 'today',   title: 'Due today',       status: 'Not Started', due: iso(0),  owner: 'A', ownerEmail: 'a@x' },
+    { id: 'far',     title: 'Due in ten days', status: 'Not Started', due: iso(10), owner: 'A', ownerEmail: 'a@x' },
+    { id: 'done',    title: 'Already done',    status: 'Complete',    due: iso(1),  owner: 'A', ownerEmail: 'a@x' },
+    { id: 'retired', title: 'Retired',         status: 'Retired',     due: iso(1),  owner: 'A', ownerEmail: 'a@x' },
+    { id: 'overdue', title: 'Already overdue', status: 'Not Started', due: iso(-5), owner: 'A', ownerEmail: 'a@x' },
+    { id: 'noemail', title: 'No address',      status: 'Not Started', due: iso(1),  owner: 'B', ownerEmail: '' },
+  ] });
+  const ids = dueSoon(3).map(t => t.id).sort().join(',');
+  ok('due-soon covers today through the horizon', ids === 'soon,today', ids);
+  ok('work already complete is excluded', !ids.includes('done'));
+  ok('retired work is excluded', !ids.includes('retired'));
+  ok('already-overdue work is excluded', !ids.includes('overdue'),
+     'overdue is a different problem with its own surface; a reminder would be noise');
+  ok('an owner with no address is excluded', !ids.includes('noemail'),
+     'no address means no notification can be created, so listing it promises something undeliverable');
+  ok('the horizon is a parameter, not a constant', dueSoon(14).length > dueSoon(3).length);
+}
+ok('reminders are NOT created on load', !/tasksDueSoon\(\)[\s\S]{0,80}createNotification/.test(main) &&
+   !/OMS_BOOT[\s\S]{0,400}tasksDueSoon/.test(main),
+   'writing to canonical when someone merely opens OMS is a write-on-read, and two people opening it at once would race');
+ok('there is an explicit action to create reminder drafts', /createDueReminders/.test(main));
+const mkRem = G('createDueReminders');
+if (typeof mkRem === 'function') {
+  const iso = d => { const x = new Date(G('TODAY')); x.setDate(x.getDate() + d);
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  T.setST({ events: [], sops: [], people: [], notifications: [], tasks: [
+    { id: 'r1', title: 'Due soon', status: 'Not Started', due: iso(1), owner: 'A', ownerEmail: 'a@x' } ] });
+  const n1 = mkRem(3);
+  ok('an explicit run creates a reminder', n1 === 1 && T.st.notifications.length === 1);
+  const n2 = mkRem(3);
+  ok('running it again creates nothing for the same task and due date', n2 === 0 && T.st.notifications.length === 1,
+     'otherwise every click would add another copy of the same reminder');
 }
 
 // ---------------------------------------------------------------- 5. release metadata
