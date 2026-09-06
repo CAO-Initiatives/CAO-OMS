@@ -633,8 +633,13 @@ ok('OMS_SYNC_ONCE still carries the id-less guard on BOTH exit paths',
    /Records with no id cannot be synced/.test(syncSrc21) &&
    /Saved, but records with no id cannot be synced/.test(syncSrc21),
    'CLAUDE.md: if you touch OMS_SYNC_ONCE, keep the check on both exit paths');
+// Rev 37 renamed the loop variable (it now posts `fresh`, the operations not
+// already with the gateway), so the old exact-string match no longer applied.
+// What must hold is the PROPERTY, not the spelling: one await per operation,
+// in a serial loop, and no Promise.all/allSettled anywhere near the post path.
 ok('the operation loop is still sequential, REV19-001 deferred',
-   /for\(const op of ops\)await OMS_POST\(op\)/.test(main),
+   /for\(const op of \w+\)\s*\{?\s*await OMS_POST\(op\)/.test(syncSrc21) &&
+   !/Promise\.(all|allSettled)\s*\(/.test(syncSrc21),
    'batching needs a gateway change; parallelising here was rejected pending OPS-023');
 ok('the beforeunload guard did not require editing OMS_SYNC_ONCE',
    !/OMS_SYNC_INFLIGHT/.test(syncSrc21),
@@ -1810,6 +1815,56 @@ console.log('\n# The reconciler, executed (Rev 36)');
   await h4.advance(15000);
   ok('once it really lands, the reconciler confirms it', h4.run(`globalThis.__b`) === 'Connected',
      'banner=' + h4.run(`globalThis.__b`) + ' after ' + (h4.calls.state - before4) + ' polls');
+
+  // ---- Rev 37 / F2b: a second save must not re-send the outstanding batch
+  // The live evidence: tasks/mql45rre6kn went to the gateway three times in
+  // forty-one seconds on 5 Sept, identical changes and baseValues each time,
+  // three operation ids. First applied, other two filed as conflicts. That
+  // pattern is 51 of the 53 records in conflicts/unresolved.
+  {
+    const k = G('OMS_OP_KEY');
+    ok('OMS_OP_KEY is defined', typeof k === 'function');
+    if (typeof k === 'function') {
+      const a = { entityType: 'tasks', entityId: 't1', action: 'update', baseVersion: 0, changes: { status: 'Complete' } };
+      const b = { entityType: 'tasks', entityId: 't1', action: 'update', baseVersion: 0, changes: { status: 'Complete' } };
+      const c = { entityType: 'tasks', entityId: 't1', action: 'update', baseVersion: 0, changes: { status: 'In Progress' } };
+      ok('the same payload keys the same', k(a) === k(b));
+      ok('a different value is a different operation', k(a) !== k(c),
+         'two edits to one record with different values are two intentions');
+    }
+  }
+
+  const h5 = build();
+  h5.run(`ST.tasks[0].title='First edit';_dirty.add('tasks');`);
+  const p5 = h5.run(`OMS_QUEUE_SYNC()`);
+  await h5.advance(40000);                      // the fold stalls; batch outstanding
+  try { await p5; } catch (_) {}
+  const postsAfterFirst = h5.calls.operation;
+  ok('the first save posted its operation', postsAfterFirst === 1, postsAfterFirst + ' posts');
+
+  // The user edits something ELSE while the first is still unconfirmed.
+  h5.run(`ST.tasks.push({id:'t2',title:'Second edit',_version:0});save();`);
+  const p5b = h5.run(`OMS_QUEUE_SYNC()`);
+  await h5.advance(40000);
+  try { await p5b; } catch (_) {}
+
+  ok('the second save posts only the NEW operation, not the outstanding one',
+     h5.calls.operation === 2, h5.calls.operation + ' posts total — 3 means the batch was re-sent');
+  ok('both operations are tracked as outstanding, so neither is forgotten',
+     h5.run(`OMS_INFLIGHT?OMS_INFLIGHT.ops.length:0`) === 2,
+     'outstanding=' + h5.run(`OMS_INFLIGHT?OMS_INFLIGHT.ops.length:0`));
+
+  // Confirmation must wait for BOTH, not just the newest.
+  h5.setCanonical({ schemaVersion: 2, revision: 76,
+    tasks: [{ id: 't1', title: 'First edit', _version: 2 }] });   // t2 not folded yet
+  await h5.advance(15000);
+  ok('a partial fold is not a confirmation', h5.run(`globalThis.__b`) !== 'Connected',
+     'banner=' + h5.run(`globalThis.__b`));
+  h5.setCanonical({ schemaVersion: 2, revision: 77,
+    tasks: [{ id: 't1', title: 'First edit', _version: 2 }, { id: 't2', title: 'Second edit', _version: 1 }] });
+  await h5.advance(15000);
+  ok('...and the full fold is', h5.run(`globalThis.__b`) === 'Connected',
+     'banner=' + h5.run(`globalThis.__b`));
 
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();

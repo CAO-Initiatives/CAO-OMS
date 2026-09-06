@@ -190,5 +190,11 @@
     "code": "function OMS_RECONCILE_SAFE(",
     "requires_text": "it waits, and your next save carries everything",
     "why": "Rev 36. Adoption replaces ST wholesale, so the reconciler must not run it over something typed since the operations went to the gateway. The guide promises exactly that. The old guard tested _dirty, which cannot tell an unsent edit from an unconfirmed one and was the reason the reconciler never fired at all."
+  },
+  {
+    "id": "outstanding-batch-not-resent",
+    "code": "function OMS_OP_KEY(",
+    "requires_text": "is not sent twice",
+    "why": "Rev 37. OMS_BASE advances only on a confirmed sync, so before this a second save recomputed the diff against the same stale base and re-sent the whole outstanding batch. On 5 Sept one ten-operation batch went to the gateway three times in forty-one seconds with identical payloads, which is 51 of the 53 records in conflicts/unresolved. If the suppression is ever removed the guide must stop promising it, or the conflict log fills with noise again and the one place a genuinely lost edit would show becomes unreadable."
   }
 ]
