@@ -1,0 +1,43 @@
+# CAO-OMS line-ending policy.
+#
+# LF is mandatory in the WORKING TREE, not merely in the object store, for two
+# reasons that have both already bitten this repository:
+#
+#   1. Checksums. release.sh computes SHA-256 of the working-tree oms.html and
+#      that value is quoted in the release note, checked by verify_live.sh
+#      against the deployed file, and used as the rollback baseline. A CRLF
+#      checkout makes every one of those mismatch.
+#   2. The tooling is bash. scripts/*.sh under a CRLF checkout fail in Git Bash
+#      with a bad-interpreter error, so the release gate cannot even run.
+#
+# Setting core.autocrlf=false on one clone is not enough: a fresh clone on any
+# other machine would still check out CRLF. This file makes the policy travel
+# with the repository. See CLAUDE.md, "Running the tooling on Windows".
+
+# Normalise every text file to LF, on checkout and on commit.
+* text=auto eol=lf
+
+# The deployed artifacts. GitHub Pages serves these byte for byte and their
+# hashes are quoted in release notes, so they must be identical everywhere.
+*.html  text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+
+# Executable tooling. CRLF here breaks the shebang in Git Bash.
+*.sh    text eol=lf
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binary. Never convert, never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.xlsx  binary
+*.xlsm  binary
+*.zip   binary
