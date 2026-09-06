@@ -1317,6 +1317,32 @@ ok('the guide no longer says the console cannot issue a password',
 ok('the guide explains the lockout guards',
    /cannot disable or delete your own account/i.test(html) && /last active/i.test(html));
 
+
+// ================================================================ REV 31
+console.log('\n# The suggested password can be dictated (OMS-049)');
+const suggest = G('omsSuggestedPassword');
+ok('omsSuggestedPassword is defined', typeof suggest === 'function');
+if (typeof suggest === 'function') {
+  // Must agree with lastNameOf in the gateway's make-users.mjs. If these two
+  // drift, the same person gets a different password depending on which route
+  // issued it - which is the failure this release exists to prevent.
+  const cases = [
+    ["Clare Il'Giovine",   'Ilgiovine-OMS-2026!'],
+    ["Anne-Marie O'Brien", 'Obrien-OMS-2026!'],
+    ['Hossam Elsaie',      'Elsaie-OMS-2026!'],
+    ['Maggie Scirica',     'Scirica-OMS-2026!'],
+    ['Jane Westgate',      'Westgate-OMS-2026!'],
+    ['Ari Ball',           'Ball-OMS-2026!'],
+  ];
+  for (const [name, expected] of cases)
+    ok(`${name} yields ${expected}`, suggest(name) === expected, suggest(name));
+  ok('no apostrophe survives into a password', !/'/.test(suggest("Clare Il'Giovine")));
+  ok('a single name still works', suggest('Cher') === 'Cher-OMS-2026!');
+  ok('an empty name degrades rather than throwing', suggest('') === 'User-OMS-2026!');
+  ok('every suggestion clears the twelve-character minimum',
+     cases.every(([n]) => suggest(n).length >= 12));
+}
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
