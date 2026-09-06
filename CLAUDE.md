@@ -42,6 +42,12 @@ Every non-cosmetic change **must** bump the version badge, append an `OMS_REV_LO
 
 **Sync confirmation takes 20–30 seconds.** Wait for `syncState` to read **Connected** *and* for `OMS_REVISION` to increment before reloading. A reload during "Sync pending" discards the change you are testing. A fixed sleep is not good enough; poll.
 
+## Running the tooling on Windows
+
+`scripts/release_gate.sh`, `scripts/release.sh`, `scripts/rollback.sh` and `scripts/verify_live.sh` are bash. **They do not run in PowerShell.** Use **Git Bash** (ships with Git for Windows): right-click in the repo folder, *Open Git Bash here*. `test/smoke.mjs` is Node and runs in any shell.
+
+Line endings matter here in a way they usually do not: the gate checksums `oms.html`, and `release.sh` computes SHA-256 of the working-tree file. If `core.autocrlf` rewrites LF to CRLF on checkout, every checksum mismatches and `.sh` files fail in Git Bash with `bad interpreter`. Confirm `git config --get core.autocrlf` is `false` for this repo, and that `oms.html` hashes to the value in the current release note.
+
 ## Verifying anything
 
 Never report state from memory or from a register row. Read it live:
