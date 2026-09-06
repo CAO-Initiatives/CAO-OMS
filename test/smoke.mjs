@@ -1448,13 +1448,26 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
      typeof G('OMS_ADOPT_CANONICAL') === 'function');
 
   const rec = String(G('OMS_START_RECONCILE') || '');
-  ok('it refuses to adopt canonical over unsaved edits', /_dirty\.size/.test(rec),
-     'adoption replaces ST wholesale and would destroy work in progress');
+  // Rev 36. This assertion used to read /_dirty\.size/.test(rec) — it asserted
+  // the presence of the exact condition that made the reconciler inert, and
+  // passed for the whole of Rev 35. The safety rule is now a named predicate,
+  // and the assertion that matters is the executable one further down.
+  ok('the adoption guard is a named predicate, not an inline flag test',
+     /OMS_RECONCILE_SAFE\(\)/.test(rec) && typeof G('OMS_RECONCILE_SAFE') === 'function',
+     '_dirty cannot distinguish unsent edits from unconfirmed ones');
   ok('it reschedules itself rather than running once', /setTimeout\(tick/.test(rec));
   ok('an expired session stops it, since waiting cannot fix that', /e\.auth/.test(rec));
 
-  const queue = String(main.slice(main.indexOf('function OMS_QUEUE_SYNC'), main.indexOf('function OMS_QUEUE_SYNC') + 1400));
+  // Was a fixed 1400-character slice from the function's name, which broke the
+  // moment a comment was added above the branch it was looking for. The
+  // function's own source has no magic number in it.
+  const queue = String(G('OMS_QUEUE_SYNC') || '');
   ok('landing in Unsynced starts the reconciler', /OMS_START_RECONCILE/.test(queue));
+  ok('but only for a batch the gateway actually accepted (Rev 36)',
+     /OMS_INFLIGHT\)\{OMS_SET_STATE\('Unsynced'/.test(queue) && /OMS_START_RECONCILE/.test(queue),
+     'a batch that never left the browser cannot be healed by waiting');
+  ok('and that branch no longer tells people not to reload',
+     !/waiting to be folded into the shared record[^']*do not reload/i.test(queue));
   ok('a fresh sync stops the reconciler so the two never race',
      /OMS_SYNC_ONCE\(\)\{OMS_STOP_RECONCILE\(\)/.test(main));
   ok('the Unsynced message no longer tells people to sit and wait',
@@ -1621,6 +1634,194 @@ if (typeof suggest === 'function') {
   ok('an empty name degrades rather than throwing', suggest('') === 'User-OMS-2026!');
   ok('every suggestion clears the twelve-character minimum',
      cases.every(([n]) => suggest(n).length >= 12));
+}
+
+// ------------------------------------------- Rev 36: the reconciler, ACTUALLY RUN
+// Every assertion this suite made about the Rev 35 reconciler was a regex over
+// source text, and the reconciler was inert for the whole of Rev 35 regardless.
+// It could not have been otherwise: the sandbox above stubs `setTimeout` to a
+// no-op, so no timer-driven code in the artifact had ever been executed by any
+// test. One of those assertions actively certified the defect.
+//
+// This block loads the artifact a SECOND time into its own context with a
+// drivable clock and a scriptable gateway, and runs the thing.
+console.log('\n# The reconciler, executed (Rev 36)');
+{
+  const build = () => {
+    let now = 0, seq = 0;
+    const timers = new Map();
+    const calls = { state: 0, operation: 0 };
+    const flush = async () => { for (let k = 0; k < 50; k++) await Promise.resolve(); };
+    // Microtasks first: OMS_QUEUE_SYNC chains off a resolved promise, so on the
+    // first call no timer exists yet and a scan-first loop would return at once.
+    const advance = async (ms) => {
+      const until = now + ms;
+      await flush();
+      for (let g = 0; g < 100000; g++) {
+        let next = null;
+        for (const [id, t] of timers) if (t.at <= until && (!next || t.at < next[1].at)) next = [id, t];
+        if (!next) break;
+        timers.delete(next[0]); now = Math.max(now, next[1].at);
+        try { await next[1].fn(); } catch (_) {}
+        await flush();
+      }
+      now = until; await flush();
+    };
+    let canonical = { schemaVersion: 2, revision: 75, tasks: [{ id: 't1', title: 'Original', _version: 1 }] };
+    const sb = {
+      console: { log: noop, error: noop, warn: noop }, JSON, Math, Date, Object, Array,
+      String, Number, Boolean, RegExp, Error, Map, Set, Promise, isNaN, parseInt, parseFloat,
+      encodeURIComponent, decodeURIComponent, TextEncoder, TextDecoder, URL, URLSearchParams,
+      setTimeout: (fn, ms) => { const id = ++seq; timers.set(id, { at: now + (ms || 0), fn }); return id; },
+      clearTimeout: id => timers.delete(id), setInterval: () => 0, clearInterval: noop,
+      requestAnimationFrame: noop, alert: noop, confirm: () => true, prompt: () => null,
+      localStorage: store(), sessionStorage: store(),
+      location: { href: 'https://x.invalid/oms.html', replace: noop, search: '' },
+      navigator: { userAgent: 'smoke' }, crypto: { subtle: {}, getRandomValues: a => a },
+      fetch: async (url) => {
+        if (String(url).endsWith('/api/state')) {
+          calls.state++;
+          return { ok: true, status: 200, headers: { get: () => null },
+                   text: async () => JSON.stringify({ state: canonical, revision: canonical.revision, schemaVersion: 2 }) };
+        }
+        calls.operation++;
+        return { ok: true, status: 202, text: async () => '{"accepted":true,"operationId":"x"}' };
+      },
+    };
+    const F = {}, EL = {};
+    const mk = id => ({ _id: id, textContent: '', innerHTML: '', className: '', style: {},
+      get value() { return F[id] !== undefined ? F[id] : ''; }, set value(v) { F[id] = v; },
+      get checked() { return !!F['@' + id]; }, set checked(v) { F['@' + id] = !!v; },
+      dataset: {}, classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
+      appendChild: noop, setAttribute: noop, getAttribute: () => null, addEventListener: noop,
+      querySelector: () => null, querySelectorAll: () => [],
+      getBoundingClientRect: () => ({ x: 0, y: 0, width: 0, height: 0 }), focus: noop, click: noop });
+    sb.addEventListener = noop; sb.removeEventListener = noop; sb.dispatchEvent = () => true;
+    sb.matchMedia = () => ({ matches: false, addEventListener: noop, addListener: noop });
+    sb.window = sb; sb.globalThis = sb; sb.self = sb;
+    sb.document = { getElementById: id => (EL[id] || (EL[id] = mk(id))), querySelector: () => null,
+      querySelectorAll: () => [], createElement: () => mk('_t'), addEventListener: noop,
+      body: mk('_b'), documentElement: mk('_h'), head: mk('_hd'), title: '', readyState: 'complete', cookie: '' };
+    const c = vm.createContext(sb);
+    new vm.Script(main + `\n;globalThis.__R={run(s){return eval(s)}};`, { filename: 'oms-clock.js' }).runInContext(c, { timeout: 15000 });
+    const run = s => c.__R.run(s);
+    run(`OMS_TOKEN=()=>'t';renderAll=()=>{};renderNotificationBadge=()=>{};OMS_LOCAL_SAVE=()=>{};
+         OMS_TOAST=m=>{globalThis.__t=(globalThis.__t||[]);globalThis.__t.push(m)};
+         OMS_SET_STATE=(s)=>{globalThis.__b=s};
+         ST={schemaVersion:2,revision:75,tasks:[{id:'t1',title:'Original',_version:1}]};
+         OMS_BASE=JSON.parse(JSON.stringify(ST));OMS_REVISION=75;_dirty.clear();`);
+    return { run, advance, calls, setCanonical: v => { canonical = v; }, timers };
+  };
+
+  // ---- the real incident: post succeeds, the fold is slow, the wait gives up
+  const h = build();
+  h.run(`ST.tasks[0].title='Edited by me';_dirty.add('tasks');`);
+  const p = h.run(`OMS_QUEUE_SYNC()`);
+  await h.advance(40000);                       // burn the whole 24 s budget
+  try { await p; } catch (_) {}
+
+  ok('a stalled fold lands in Unsynced', h.run(`globalThis.__b`) === 'Unsynced', h.run(`globalThis.__b`));
+  ok('the accepted batch is recorded, so the banner can tell the two cases apart',
+     h.run(`typeof OMS_INFLIGHT!=='undefined'&&!!OMS_INFLIGHT`), 'OMS_INFLIGHT is null after a successful post');
+  ok('_dirty is still non-empty here — this is why the old guard never fired',
+     h.run(`_dirty.size`) > 0, 'if this is 0 the regression test below proves nothing');
+
+  const before = h.calls.state;
+  h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited by me', _version: 2 }] });
+  await h.advance(30000);                       // ten reconciler ticks
+
+  ok('THE PROMISE: the reconciler polls canonical on its own', h.calls.state - before > 0,
+     (h.calls.state - before) + ' calls to /api/state in 30 s');
+  ok('THE PROMISE: it clears the banner without a reload', h.run(`globalThis.__b`) === 'Connected',
+     h.run(`globalThis.__b`));
+  ok('THE PROMISE: it adopts the confirmed revision', h.run(`OMS_REVISION`) === 76,
+     'OMS_REVISION=' + h.run(`OMS_REVISION`));
+  ok('and says so', (h.run(`globalThis.__t`) || []).includes('Save confirmed'));
+
+  // ---- the rule it must not break: never adopt over something newly typed
+  const h2 = build();
+  h2.run(`ST.tasks[0].title='Edited by me';_dirty.add('tasks');`);
+  const p2 = h2.run(`OMS_QUEUE_SYNC()`);
+  await h2.advance(40000);
+  try { await p2; } catch (_) {}
+  h2.run(`ST.tasks[0].title='Typed while waiting';save();`);   // a NEW edit after the post
+  const before2 = h2.calls.state;
+  h2.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited by me', _version: 2 }] });
+  await h2.advance(30000);
+  ok('it does NOT adopt canonical over an edit typed since the post',
+     h2.run(`ST.tasks[0].title`) === 'Typed while waiting',
+     'adoption replaces ST wholesale and would have destroyed it');
+  ok('OMS_RECONCILE_SAFE reports unsafe while that edit is outstanding',
+     h2.run(`typeof OMS_RECONCILE_SAFE==='function'?OMS_RECONCILE_SAFE():null`) === false);
+
+  // ---- Rev 36 / F2: a revision bump is not a confirmation
+  // consolidate.py increments the revision once per batch "including
+  // conflicts/invalid operations", so the old test (revision > start) called a
+  // rejected operation, and somebody else's unrelated save, a success.
+  {
+    const landed = G('OMS_OPS_LANDED');
+    ok('OMS_OPS_LANDED is defined', typeof landed === 'function');
+    // Guarded so this block reports cleanly against an artifact that predates
+    // the predicate, instead of aborting the run. The negative control has to
+    // produce FAIL lines, not a stack trace.
+    if (typeof landed === 'function') {
+    const op = { entityType: 'tasks', entityId: 't1', action: 'update', baseVersion: 1,
+                 changes: { title: 'Mine' } };
+    const st = rows => ({ tasks: rows });
+    ok('an update is applied when canonical holds the values it asked for',
+       landed(st([{ id: 't1', title: 'Mine', _version: 2 }]), [op]) === 'applied');
+    ok('...pending while canonical still holds the old value at the old version',
+       landed(st([{ id: 't1', title: 'Original', _version: 1 }]), [op]) === 'pending');
+    ok('...rejected when the record moved on without it',
+       landed(st([{ id: 't1', title: 'Somebody else', _version: 2 }]), [op]) === 'rejected');
+    const cr = { entityType: 'tasks', entityId: 't9', action: 'create', baseVersion: 0, changes: {} };
+    ok('a create is pending until the row exists', landed(st([]), [cr]) === 'pending');
+    ok('a create is applied once it does', landed(st([{ id: 't9', _version: 1 }]), [cr]) === 'applied');
+    const del = { entityType: 'tasks', entityId: 't1', action: 'delete', baseVersion: 1 };
+    ok('a delete is applied when the row is gone', landed(st([]), [del]) === 'applied');
+    ok('a delete is rejected when the row was edited instead',
+       landed(st([{ id: 't1', _version: 2 }]), [del]) === 'rejected');
+    ok('one rejected operation rejects the batch',
+       landed(st([{ id: 't1', title: 'Somebody else', _version: 2 }]), [cr, op]) === 'rejected');
+    }
+  }
+
+  // ---- S2, executed: somebody else's save must not confirm mine
+  const h4 = build();
+  h4.run(`ST.tasks[0].title='My important edit';_dirty.add('tasks');`);
+  const p4 = h4.run(`OMS_QUEUE_SYNC()`);
+  await h4.advance(200);
+  // A DIFFERENT user's save is folded in. Ours is still queued.
+  h4.setCanonical({ schemaVersion: 2, revision: 76,
+    tasks: [{ id: 't1', title: 'Original', _version: 1 }, { id: 't2', title: 'Someone else', _version: 1 }] });
+  await h4.advance(40000);
+  try { await p4; } catch (_) {}
+  ok("another user's save is not mistaken for confirmation of mine",
+     h4.run(`globalThis.__b`) !== 'Connected', 'banner=' + h4.run(`globalThis.__b`));
+  ok('and my edit is still on screen rather than reverted',
+     h4.run(`ST.tasks[0].title`) === 'My important edit', h4.run(`ST.tasks[0].title`));
+  ok('no success toast for a save that has not landed',
+     !(h4.run(`globalThis.__t`) || []).includes('Save successful'),
+     JSON.stringify(h4.run(`globalThis.__t`)));
+  // ...and when it finally lands, the reconciler confirms it for real.
+  const before4 = h4.calls.state;
+  h4.setCanonical({ schemaVersion: 2, revision: 77,
+    tasks: [{ id: 't1', title: 'My important edit', _version: 2 }, { id: 't2', title: 'Someone else', _version: 1 }] });
+  await h4.advance(15000);
+  ok('once it really lands, the reconciler confirms it', h4.run(`globalThis.__b`) === 'Connected',
+     'banner=' + h4.run(`globalThis.__b`) + ' after ' + (h4.calls.state - before4) + ' polls');
+
+  // ---- operations that never reached the gateway must not promise self-healing
+  const h3 = build();
+  h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);
+  h3.run(`ST.tasks[0].title='Never sent';_dirty.add('tasks');`);
+  const p3 = h3.run(`OMS_QUEUE_SYNC()`);
+  await h3.advance(5000);
+  try { await p3; } catch (_) {}
+  ok('a batch that never reached the gateway leaves OMS_INFLIGHT null',
+     h3.run(`typeof OMS_INFLIGHT==='undefined'?'absent':OMS_INFLIGHT`) === null);
+  ok('...and no reconciler is started for it', h3.timers.size === 0,
+     h3.timers.size + ' timers pending');
 }
 
 // ---------------------------------------------------------------- 5. release metadata

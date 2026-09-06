@@ -172,5 +172,23 @@
     "code": "calShowOoo",
     "requires_text": "Out-of-office entries are hidden by default",
     "why": "Rev 35 hides fifteen existing calendar rows. Hiding data without saying so is how people conclude the calendar is wrong."
+  },
+  {
+    "id": "confirmation-means-applied",
+    "code": "function OMS_OPS_LANDED(",
+    "requires_text": "holds what you asked for",
+    "why": "Rev 36. Confirmation used to be a bare revision increase, and consolidate.py bumps the revision once per batch INCLUDING rejected operations - so a colleague's save, or an outright rejection, was reported to the user as 'Save successful' while their edit reverted on screen. If this predicate is ever removed the promise that confirmation means the change is really there must go with it, or the interface returns to certifying saves that did not happen."
+  },
+  {
+    "id": "unsynced-says-which-kind",
+    "code": "else if(OMS_INFLIGHT){OMS_SET_STATE('Unsynced'",
+    "requires_text": "did not reach shared OMS",
+    "why": "Rev 36. Two different situations wore one banner: operations accepted by the gateway and awaiting the fold, where waiting works and reloading is harmless, and operations that never left the browser, where waiting does nothing and reloading DISCARDS the edit. The guide can only tell people what to do if the banner distinguishes them, so the branch and the text stand or fall together."
+  },
+  {
+    "id": "reconciler-waits-on-new-typing",
+    "code": "function OMS_RECONCILE_SAFE(",
+    "requires_text": "it waits, and your next save carries everything",
+    "why": "Rev 36. Adoption replaces ST wholesale, so the reconciler must not run it over something typed since the operations went to the gateway. The guide promises exactly that. The old guard tested _dirty, which cannot tell an unsent edit from an unconfirmed one and was the reason the reconciler never fired at all."
   }
 ]
