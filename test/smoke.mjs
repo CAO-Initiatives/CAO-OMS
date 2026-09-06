@@ -459,6 +459,116 @@ ok('the event form still adds a category inline',
 ok('renaming is blocked for read-only users',
    /function openCategoriesModal[\s\S]{0,200}?OMS_IS_EDITOR\(\)/.test(main));
 
+// ================================================================ REV 19
+// Written before the implementation, as todoCheck, then promoted to ok().
+// Four items, none of them on the sync path: notification subject standard,
+// cross-source import de-duplication, and the two Weekly Brief defects found
+// while investigating OPS-005.
+
+// ---------------------------------------------------------------- subject standard (DEC-012)
+console.log('\n# Notification subject standard (Rev 19, DEC-012)');
+const subjOf = G('notificationSubject'), fmtLong = G('fmtLong');
+ok('notificationSubject is defined', typeof subjOf === 'function');
+ok('fmtLong is defined', typeof fmtLong === 'function');
+if (typeof fmtLong === 'function') {
+  ok('fmtLong renders a scannable date', fmtLong('2026-09-08') === 'Tue 8 Sep 2026',
+     'the due date must survive subject truncation, so it is spelled out');
+  ok('fmtLong is blank-safe', fmtLong('') === '' && fmtLong(null) === '');
+}
+if (typeof subjOf === 'function') {
+  const hi = { title: 'OMS go-live triage', owner: 'Ari Ball', due: '2026-09-08', priority: 'High' };
+  const lo = { title: 'Cabinet scorecards', owner: 'Maggie Scirica', due: '2026-05-18', priority: 'Medium' };
+  const s1 = subjOf(hi, false), s2 = subjOf(lo, true), s3 = subjOf({ title: 'No date', owner: 'X' }, false);
+  ok('every subject leads with the OMS marker', s1.startsWith('OMS | ') && s2.startsWith('OMS | ') && s3.startsWith('OMS | '),
+     'DEC-012: OMS must be clearly stated in the subject');
+  ok('high priority is called out immediately after the marker',
+     s1.startsWith('OMS | HIGH PRIORITY | ') && !/HIGH PRIORITY/.test(s2));
+  ok('the due date is front-loaded, before the title',
+     s1.indexOf('Due Tue 8 Sep 2026') < s1.indexOf('OMS go-live triage'),
+     'format B: what survives truncation must be the deadline, not the title tail');
+  ok('a new assignment and a reassignment are distinguishable',
+     /\| New assignment \|/.test(s1) && /\| Reassigned \|/.test(s2));
+  ok('the subject carries title and owner', /OMS go-live triage/.test(s1) && /Ari Ball/.test(s1));
+  ok('a missing due date degrades gracefully', /Due not set/.test(s3));
+  ok('the old subject shape is gone', !/New OMS assignment:/.test(main) && !/OMS reassignment:/.test(main));
+}
+
+// ---------------------------------------------------------------- cross-source import de-dup (OPS-016)
+console.log('\n# Cross-source import de-duplication (Rev 19, OPS-016)');
+const xdup = G('crossSourceDuplicates');
+ok('crossSourceDuplicates is defined', typeof xdup === 'function');
+if (typeof xdup === 'function') {
+  // the real production shape: the two workbooks record the same event differently
+  T.setST({ events: [
+    { id: 'm1', source: 'Maggie', title: 'White Coat - CLT', date: '2026-07-25' },
+    { id: 'm2', source: 'Maggie', title: 'State of the School', date: '2026-03-19' },
+    { id: 'a9', source: 'Ari', title: 'Existing Ari row', date: '2026-07-25' },
+  ] });
+  const hits = xdup([{ title: 'White Coat Ceremony - CLT', date: '2026-07-25' }], 'Ari');
+  ok('a same-day near-title match against the OTHER source is flagged', hits.length === 1,
+     'White Coat Ceremony - CLT vs White Coat - CLT, both on 2026-07-25, is a real production duplicate');
+  ok('the flag names both sides', hits.length === 1 &&
+     /White Coat Ceremony/.test(hits[0].incoming) && /White Coat - CLT/.test(hits[0].existing));
+  ok('rows from the SAME source are not flagged',
+     xdup([{ title: 'Existing Ari row', date: '2026-07-25' }], 'Ari').length === 0,
+     'the import replaces its own source wholesale, so self-collisions are expected');
+  ok('a different date is not a duplicate',
+     xdup([{ title: 'White Coat - CLT', date: '2026-08-25' }], 'Ari').length === 0);
+  ok('an unrelated title on the same day is not a duplicate',
+     xdup([{ title: 'Budget review', date: '2026-07-25' }], 'Ari').length === 0);
+  ok('a clean import returns nothing', xdup([], 'Ari').length === 0);
+  ok('a row with no date is ignored, not crashed on',
+     xdup([{ title: 'White Coat - CLT', date: '' }], 'Ari').length === 0);
+}
+ok('the import warns before replacing, and does not silently drop rows',
+   /crossSourceDuplicates\(/.test(main) && /function confirmImport[\s\S]{0,900}?crossSourceDuplicates/.test(main),
+   'both workbooks are canonical for their own source, so the import must report the clash, never resolve it');
+
+// ---------------------------------------------------------------- Weekly Brief week (OPS-020)
+console.log('\n# Weekly Brief opens on the current week (Rev 19, OPS-020)');
+const bws = G('briefWeekStart');
+ok('briefWeekStart is defined', typeof bws === 'function');
+if (typeof bws === 'function') {
+  const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - d.getDay());
+  const cur = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  T.setST({ briefWeek: '2026-06-16', events: [], tasks: [] });
+  ok('a stale stored week is replaced by the current week', bws() === cur,
+     'canonical held 2026-06-16, twelve weeks stale, so the Brief was rendering mid-June');
+  T.setST({ briefWeek: '2099-01-04', events: [], tasks: [] });
+  ok('a deliberately chosen future week is respected', bws() === '2099-01-04',
+     'the picker must still allow any week');
+  T.setST({ events: [], tasks: [] });
+  ok('an absent stored week falls back to the current week, not a hardcoded 2026 date', bws() === cur);
+  ok('the 2026-06-04 hardcoded fallback is gone', !/briefWeek\|\|'2026-06-04'/.test(main));
+}
+
+// ---------------------------------------------------------------- Weekly Brief deliverables (OPS-021)
+console.log('\n# Weekly Brief shows deliverables due that week (Rev 19, OPS-021)');
+const btd = G('briefTasksDue');
+ok('briefTasksDue is defined', typeof btd === 'function');
+if (typeof btd === 'function') {
+  T.setST({ events: [], tasks: [
+    { id: 't1', title: 'OMS go-live triage', owner: 'Ari Ball', due: '2026-09-08', priority: 'High', status: 'Not Started' },
+    { id: 't2', title: 'Also this week', owner: 'Maggie Scirica', due: '2026-09-12', priority: 'Medium', status: 'In Progress' },
+    { id: 't3', title: 'Next week', owner: 'X', due: '2026-09-14', priority: 'Low', status: 'Not Started' },
+    { id: 't4', title: 'Retired one', owner: 'X', due: '2026-09-09', priority: 'Low', status: 'Retired' },
+    { id: 't5', title: 'No due date', owner: 'X', due: '', priority: 'Low', status: 'Not Started' },
+  ] });
+  const got = btd('2026-09-06');
+  ok('deliverables due in the displayed week are returned', got.length === 2,
+     'the 8 Sept go-live triage was invisible in the Brief before this');
+  ok('the week boundary is inclusive at both ends',
+     got.some(t => t.id === 't1') && got.some(t => t.id === 't2'));
+  ok('a deliverable due the following week is excluded', !got.some(t => t.id === 't3'));
+  ok('a Retired deliverable is excluded', !got.some(t => t.id === 't4'),
+     'consistent with Rev 17: retired work is withdrawn, not outstanding');
+  ok('a deliverable with no due date is excluded', !got.some(t => t.id === 't5'));
+  ok('an empty week returns nothing, and does not throw', btd('2030-01-06').length === 0);
+}
+ok('rBrief actually renders the deliverables section',
+   /function rBrief[\s\S]{0,4000}?briefTasksDue\(/.test(main),
+   'the function existing is not enough; the Brief must show it');
+
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
 const revs = [...html.matchAll(/\{rev:(\d+),/g)].map(m => +m[1]);
