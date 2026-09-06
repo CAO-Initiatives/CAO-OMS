@@ -4,11 +4,11 @@ Dean's Office Operations Management System, Wake Forest University School of Med
 
 ## What this repo is
 
-`oms.html` is the entire application: one file, ~166 KB, three inline `<script>` blocks, no build step, no dependencies beyond a CDN SheetJS tag. `index.html` is the sign-in page. GitHub Pages serves both from `main`, so **a push to `main` is a deploy**.
+`oms.html` is the entire application: one file, ~229 KB, three inline `<script>` blocks, no build step, no dependencies beyond a CDN SheetJS tag. `index.html` is the sign-in page. GitHub Pages serves both from `main`, so **a push to `main` is a deploy**.
 
 Two sibling repos, both private:
 
-- `CAO-OMS-Gateway` — Vercel functions. `api/operation.js` is a thin wrapper; the logic is in `lib/core.js` (~105 lines), which authenticates as a GitHub App and writes to the data repo. It has no array primitives — it validates and persists, it does not merge.
+- `CAO-OMS-Gateway` — Vercel functions. `api/operation.js` is a thin wrapper; the logic is in `lib/core.js` (~136 lines), which authenticates as a GitHub App and writes to the data repo. It has no array primitives — it validates and persists, it does not merge.
 - `CAO-OMS-Data` — canonical state: `state/oms-state.json`, `state/manifest.json`, `operations/processed/`, `snapshots/`, and `RECOVERY.md`. A consolidator workflow folds operations into the state file.
 
 ## Release rules
@@ -20,7 +20,7 @@ Two sibling repos, both private:
 Before pushing `oms.html`:
 
 ```bash
-node test/smoke.mjs oms.html      # behaviour — 36 assertions
+node test/smoke.mjs oms.html      # behavior — 268 assertions
 ./scripts/release_gate.sh HEAD~1  # form — 11 checks + 31 preflight assertions
 ```
 
@@ -66,4 +66,6 @@ Names to spell correctly: Terry Hales, Terri Yates, Clare Il'Giovine, Dean Boulw
 
 ## History worth knowing
 
-Rev 13 shipped outside its approved scope and was never QA'd. Rev 14 fixed a Cadence grid defect that corrupted status on every documented edit. Rev 15 hardened the release gate, migrated `gw`/`rob` to id-bearing records, and added the silent-save guard. Rev 16 added owner resolution. The gate that exists now was written because the previous one accepted the bare word `Tasks` as proof the User Guide had been updated.
+Rev 13 shipped outside its approved scope and was never QA'd. Rev 14 fixed a Cadence grid defect that corrupted status on every documented edit. Rev 15 hardened the release gate, migrated `gw`/`rob` to id-bearing records, and added the silent-save guard. Rev 16 added owner resolution. Rev 17 added Retired status, free-text categories, saved views and multi-day event spanning; Rev 18 made categories user-editable and fixed a live legend-code collision; Rev 19 fixed the Weekly Brief default week and the notification subject standard; Rev 20 removed en-GB spellings and added a guard; Rev 21 was the sync-path release, quarantined deliberately; Rev 22 unified the vocabulary on "task"; Rev 23 gave tasks a category, sortable columns, a grouped checklist export and a working intake form.
+
+The gate that exists now was written because the previous one accepted the bare word `Tasks` as proof the User Guide had been updated.
