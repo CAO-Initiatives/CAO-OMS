@@ -53,7 +53,7 @@ Gate check 14 (`scripts/no_control_bytes.py`, negative suite `test/no_control_by
 
 **A save producing no operations used to report "Connected."** That is the shape of the bug above. If you touch `OMS_SYNC_ONCE`, keep the `OMS_UNSYNCABLE()` check on both exit paths.
 
-**The gateway appends on `create`.** Proven by probe: a create for an entity the store already holds produces a duplicate, not an upsert. Unreachable while every record has an id — do not make it reachable.
+**A `create` for a collection holding id-less rows appends a duplicate.** The operational instruction is unchanged — do not make it reachable — but the mechanism is worth stating correctly, because the original wording sent a reader to the wrong file. The gateway only queues; `consolidate.py` decides. Its `find_record` matches on `str(item.get("id",""))`, so a create whose id is already present is filed as a **conflict**, not applied twice. The duplicate happens only when the existing rows have no id to match against — which is exactly the `gw` 8→9 probe, and is still reproducible today.
 
 **Never migrate canonical data through the client.** The `gw`/`rob` id migration was a direct, snapshotted commit to `state/oms-state.json`. Going through the operation path would have produced 16 CAO Visibility rows and 14 workstreams. Snapshot first, using the repo's own `snapshots/manifest-before-<UTC>.json` convention.
 
@@ -77,7 +77,7 @@ Never report state from memory or from a register row. Read it live:
 
 ## Conventions
 
-Person ids are `slug(name)` with a `-2`, `-3` suffix on collision. Owner strings must match a directory person; `findPerson` binds only when exactly one person matches, and `ownerAmbiguity` blocks a save that matches two. Display names and email names diverge at Advocate — Maggie/Margaret, Ari/Ariana — so the resolution ladder checks both.
+Person ids are `slug(name)` with a `-2`, `-3` suffix on collision, **for records the app creates**. Do not re-derive an id for an existing person: the directory holds ids that predate the current `slug`, and `slug("Clare Il'Giovine")` now returns `clare-il-giovine` while canonical holds `clare-ilgiovine`. Re-deriving would create a second person rather than find the first. New `rob` ids follow the same shape through `omsRobId`. Owner strings must match a directory person; `findPerson` binds only when exactly one person matches, and `ownerAmbiguity` blocks a save that matches two. Display names and email names diverge at Advocate — Maggie/Margaret, Ari/Ariana — so the resolution ladder checks both.
 
 `gw` ids are `gw-<YYYY-MM-DD>`; `rob` ids are `rob-<slug of workstream>`.
 
