@@ -40,24 +40,34 @@ if (!blocks.length) { console.error('HARNESS: no inline script found in ' + FILE
 const main = blocks.reduce((a, b) => (b.length > a.length ? b : a), '');
 
 const noop = () => {};
+const ALERTS = [];
 const store = () => {
   const m = new Map();
   return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)),
            removeItem: k => m.delete(k), clear: () => m.clear(), key: i => [...m.keys()][i],
            get length() { return m.size; } };
 };
-const el = () => ({ textContent: '', innerHTML: '', className: '', style: {}, value: '',
+// Rev 23: elements are CACHED by id and remember what was written to them.
+// getElementById used to hand back a fresh throwaway every call, so nothing a
+// renderer produced could be inspected - which is why every assertion until now
+// had to read the source text instead of the output. FIELDS lets a form be
+// filled in before saveModal is called.
+const FIELDS = {};
+const el = (id) => ({ _id: id, textContent: '', innerHTML: '', className: '', style: {},
+                    get value() { return FIELDS[id] !== undefined ? FIELDS[id] : ''; },
+                    set value(v) { FIELDS[id] = v; },
                     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
                     appendChild: noop, setAttribute: noop, getAttribute: () => null,
                     addEventListener: noop, querySelector: () => null, querySelectorAll: () => [],
                     getBoundingClientRect: () => ({ x: 0, y: 0, width: 0, height: 0 }), focus: noop, click: noop });
+const ELS = {};
 
 const sandbox = {
   console, JSON, Math, Date, Object, Array, String, Number, Boolean, RegExp, Error,
   Map, Set, Promise, isNaN, parseInt, parseFloat, encodeURIComponent, decodeURIComponent,
   setTimeout: noop, clearTimeout: noop, setInterval: noop, clearInterval: noop,
   requestAnimationFrame: noop, fetch: () => Promise.reject(new Error('smoke: network disabled')),
-  alert: noop, confirm: () => true, prompt: () => null,
+  alert: m => ALERTS.push(String(m)), confirm: () => true, prompt: () => null,
   localStorage: store(), sessionStorage: store(),
   location: { href: 'https://example.invalid/oms.html', replace: noop, search: '' },
   navigator: { userAgent: 'smoke' }, crypto: { subtle: {}, getRandomValues: a => a },
@@ -71,9 +81,10 @@ sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 sandbox.document = {
-  getElementById: () => el(), querySelector: () => null, querySelectorAll: () => [],
-  createElement: () => el(), addEventListener: noop, body: el(), documentElement: el(),
-  head: el(), title: '', readyState: 'complete', cookie: '',
+  getElementById: id => (ELS[id] || (ELS[id] = el(id))),
+  querySelector: () => null, querySelectorAll: () => [],
+  createElement: () => el('_tmp'), addEventListener: noop, body: el('_body'), documentElement: el('_html'),
+  head: el('_head'), title: '', readyState: 'complete', cookie: '',
 };
 
 const ctx = vm.createContext(sandbox);
@@ -718,6 +729,273 @@ ok('the body label says Task', /'Task: '\+/.test(main));
 console.log('\n# Weekly Brief wording (Rev 22)');
 ok('the Brief section is titled Tasks Due This Week', /Tasks Due This Week/.test(html));
 ok('the empty state says tasks', /No tasks due this week/.test(main));
+
+// ================================================================ REV 23
+// Four register items, written as assertions before any of them was built.
+// OMS-008 comes first on purpose: OMS-007 and OMS-011 both name Category in
+// their acceptance criteria, so neither can be satisfied until it exists.
+
+console.log('\n# Category is one shared vocabulary, not a second list (OMS-008)');
+// Reusing the event category list is the whole point. A task created from an
+// Advocate BOD event should be findable alongside that event, and the Rev 18
+// rename/merge manager should govern both. Two parallel lists would drift.
+const evCats23 = G('eventCategories');
+ok('eventCategories is defined', typeof evCats23 === 'function');
+if (typeof evCats23 === 'function') {
+  T.setST({ events: [{ id: 'e1', category: 'Cabinet' }], tasks: [{ id: 't1', category: 'Site Visits' }] });
+  const catList = evCats23();
+  ok('a category used only by a TASK still appears in the list',
+     catList.includes('Site Visits'),
+     'without this a task-only category vanishes on reload, leaving a task on a category nobody can pick');
+  ok('event categories are still listed', catList.includes('Cabinet'));
+  ok('the list is de-duplicated', new Set(catList).size === catList.length);
+}
+
+console.log('\n# Renaming a category moves tasks too (OMS-008)');
+const renameCat23 = G('renameCategory');
+ok('renameCategory is defined', typeof renameCat23 === 'function');
+if (typeof renameCat23 === 'function') {
+  T.setST({ events: [{ id: 'e1', category: 'Old Name' }],
+            tasks: [{ id: 't1', category: 'Old Name' }, { id: 't2', category: 'Other' }] });
+  const moved = renameCat23('Old Name', 'New Name');
+  const stR = T.st;
+  ok('the event was renamed', stR.events[0].category === 'New Name');
+  ok('the TASK was renamed as well', stR.tasks[0].category === 'New Name',
+     'a rename that skipped tasks would strand them on a category no longer offered');
+  ok('an unrelated task is untouched', stR.tasks[1].category === 'Other');
+  ok('the count returned covers both collections', moved === 2,
+     'the confirm dialog quotes this number, so it must not understate the blast radius');
+}
+
+console.log('\n# The rename dialog states the real blast radius (OMS-008)');
+const catTaskCount = G('categoryTaskCount');
+const catEvCount = G('categoryEventCount');
+ok('categoryTaskCount is defined', typeof catTaskCount === 'function');
+if (typeof catTaskCount === 'function' && typeof catEvCount === 'function') {
+  T.setST({ events: [{ id: 'e1', category: 'X' }, { id: 'e2', category: 'X' }], tasks: [{ id: 't1', category: 'X' }] });
+  ok('event count keeps its meaning', catEvCount('X') === 2);
+  ok('task count is reported separately', catTaskCount('X') === 1);
+}
+
+console.log('\n# Category on the task form (OMS-008)');
+ok('the task form has a category control', /id="f_task_cat"/.test(main));
+ok('the task form offers a new category inline, not in a second dialog',
+   /id="f_task_cat_new"/.test(main),
+   'CLAUDE.md: one overlay, one #mbody - a second modal would destroy the task being edited');
+ok('the task save persists the category', /category:_tcat/.test(main));
+ok('a task created from an event inherits that event category',
+   /sourceEvent\?sourceEvent\.category/.test(main),
+   'the link exists so the work can be found alongside its meeting');
+
+console.log('\n# Tasks can be filtered by category (OMS-008)');
+ok('a category filter variable exists', /\btaskCat\b/.test(main));
+ok('the category filter is applied when the list is built',
+   /taskCat!=='All'/.test(main));
+
+console.log('\n# Sorting (OMS-007)');
+const sortTasks = G('sortTasks');
+ok('sortTasks is defined', typeof sortTasks === 'function');
+if (typeof sortTasks === 'function') {
+  const srows = [
+    { id: 'a', title: 'Beta',  owner: 'Zoe', due: '2026-03-01', priority: 'Low',    _s: 'Complete',    category: 'B' },
+    { id: 'b', title: 'alpha', owner: 'Ari', due: '2026-01-01', priority: 'High',   _s: 'Overdue',     category: 'C' },
+    { id: 'c', title: 'Gamma', owner: 'Mag', due: '2026-02-01', priority: 'Medium', _s: 'In Progress', category: 'A' },
+  ];
+  const ids = (k, d) => sortTasks(srows.slice(), k, d).map(r => r.id).join('');
+  ok('title sorts case-insensitively', ids('title', 'asc') === 'bac',
+     'ASCII order would put Beta and Gamma ahead of alpha');
+  ok('title reverses', ids('title', 'desc') === 'cab');
+  ok('due date sorts chronologically', ids('due', 'asc') === 'bca');
+  ok('priority sorts High to Low, not alphabetically', ids('priority', 'asc') === 'bca',
+     'alphabetical would read High, Low, Medium and be useless');
+  ok('status sorts by urgency, not alphabetically', ids('status', 'asc') === 'bca',
+     'Overdue first, then In Progress, then Complete');
+  ok('owner sorts alphabetically', ids('owner', 'asc') === 'bca');
+  ok('category sorts alphabetically', ids('category', 'asc') === 'cab');
+  ok('sortTasks does not mutate its input', (() => {
+    const src = srows.slice(); const before = src.map(r => r.id).join('');
+    sortTasks(src, 'due', 'asc');
+    return src.map(r => r.id).join('') === before;
+  })(), 'rTasks sorts the filtered list; mutating the caller would scramble it');
+  ok('an unknown key falls back instead of throwing',
+     Array.isArray(sortTasks(srows.slice(), 'nonsense', 'asc')) &&
+     sortTasks(srows.slice(), 'nonsense', 'asc').length === 3);
+  const blanks = [{ id: 'x', due: '' }, { id: 'y', due: '2026-01-01' }];
+  ok('a blank due date sorts last, not first',
+     sortTasks(blanks.slice(), 'due', 'asc').map(r => r.id).join('') === 'yx',
+     'an undated task is not the most urgent thing in the office');
+}
+ok('the table headers are clickable', /omsSortTasks\(/.test(main));
+ok('the active sort is visible in the header', /sort-ind/.test(main),
+   'a sort you cannot see is a sort you cannot trust');
+
+console.log('\n# Checklist export (OMS-011)');
+const groups = G('checklistGroups');
+ok('checklistGroups is defined', typeof groups === 'function');
+if (typeof groups === 'function') {
+  const g = groups([
+    { id: '1', title: 'A', sourceEventId: 'e1', sourceEventTitle: 'Board Meeting' },
+    { id: '2', title: 'B', sourceEventId: 'e1', sourceEventTitle: 'Board Meeting' },
+    { id: '3', title: 'C', sourceEventId: '',   sourceEventTitle: '' },
+  ]);
+  ok('tasks are grouped by their source event', g.length === 2);
+  ok('the event group keeps the event name',
+     g.some(x => x.name === 'Board Meeting' && x.items.length === 2));
+  ok('unlinked tasks are grouped, not dropped',
+     g.some(x => x.items.length === 1 && /not linked/i.test(x.name)),
+     'dropping them would silently shorten the checklist');
+  const order = groups([
+    { id: '1', title: 'A', sourceEventId: '', sourceEventTitle: '' },
+    { id: '2', title: 'B', sourceEventId: 'e1', sourceEventTitle: 'Zeta' },
+  ]);
+  ok('the unlinked group sorts last', /not linked/i.test(order[order.length - 1].name));
+}
+ok('every field the acceptance criteria names is in the checklist', (() => {
+  const i = main.indexOf('function checklistHtml');
+  if (i < 0) return false;
+  const seg = main.slice(i, i + 3000);
+  return /\.title/.test(seg) && /\.owner/.test(seg) && /\.due/.test(seg) &&
+         /_s\b/.test(seg) && /\.notes/.test(seg) && /\.category/.test(seg);
+})(), 'title, owner, due date, status, notes, category');
+ok('the checklist has something to tick', /&#9744;/.test(main),
+   'a checklist without boxes is a list');
+ok('the export reflects the filters on screen', /exportChecklist/.test(main));
+
+console.log('\n# New-item intake (OMS-001)');
+const newItemSrc = typeof G('openNewItem') === 'function' ? G('openNewItem').toString() : '';
+ok('openNewItem handles every type the cards offer',
+   ['inc', 'fr', 'brd', 'dl'].every(t => new RegExp("'" + t + "'").test(newItemSrc)),
+   'Board and Upcoming Deadlines rendered a + Add button that silently did nothing');
+ok('an unrecognized type fails loudly rather than doing nothing',
+   /cannot be added/i.test(newItemSrc),
+   'the old function set MC and returned, so the click merely looked broken');
+ok('intake is reachable from the toolbar, not only from a card',
+   /openNewItem\('inc'\)/.test(main) && (main.match(/openNewItem\(/g) || []).length >= 3);
+ok('the intake status is a fixed list, not free text', /INTAKE_STATUSES/.test(main));
+ok('New is the staging status a new item lands in', /INTAKE_STATUSES=\['New'/.test(main));
+ok('the intake save enforces its required fields', (() => {
+  const b = main.indexOf("} else if(t==='inc')");
+  return b > -1 && /is required/.test(main.slice(b, b + 1600));
+})(), 'acceptance criteria: required fields enforced. Scoped to the inc branch: the admin People form already says "Name is required", which a whole-file match would have mistaken for this.');
+ok('the required-field check runs BEFORE the record is pushed', (() => {
+  const b = main.indexOf("} else if(t==='inc')");
+  if (b < 0) return false;
+  const seg = main.slice(b, b + 1600);
+  const guard = seg.search(/is required/), push = seg.indexOf('ST.incoming.push');
+  return guard > -1 && push > -1 && guard < push;
+})(), 'validating after the push would leave a blank row behind');
+ok('the other intake forms enforce their required field too', (() => {
+  const b = main.indexOf("} else if(t==='fr')");
+  if (b < 0) return false;
+  const seg = main.slice(b, b + 1200);
+  const guard = seg.search(/is required/), push = seg.indexOf('ST.forReview.push');
+  return guard > -1 && push > -1 && guard < push;
+})());
+
+
+// ---------------------------------------------------------------- Rev 23 rendered output
+// Everything above reads the source. These read what the code actually PRODUCES.
+// Rev 17's backward calendar gap-filling passed every assertion written for it
+// and was only visible once something was rendered and looked at.
+console.log('\n# What the Tasks tab actually renders (Rev 23)');
+const FIXTURE = () => ({
+  events: [{ id: 'e1', title: 'Advocate Board Meeting', date: '2026-09-10', category: 'Advocate BOD' },
+           { id: 'e2', title: 'Cabinet Retreat', date: '2026-09-15', category: 'Cabinet' }],
+  tasks: [
+    { id: 't1', title: 'Draft the board deck', owner: 'Ari Ball', due: '2026-08-01', priority: 'High',   status: 'In Progress', category: 'Advocate BOD', notes: 'Needs finance sign-off', sourceEventId: 'e1', sourceEventTitle: 'Advocate Board Meeting' },
+    { id: 't2', title: 'apply venue deposit', owner: 'Maggie Scirica', due: '2026-09-20', priority: 'Low', status: 'Not Started', category: 'Cabinet', notes: '', sourceEventId: 'e2', sourceEventTitle: 'Cabinet Retreat' },
+    { id: 't3', title: 'Zebra report', owner: 'Ari Ball', due: '', priority: 'Medium', status: 'Not Started', category: '', notes: 'none', sourceEventId: '', sourceEventTitle: '' },
+    { id: 't4', title: 'Book travel', owner: 'Terry Hales', due: '2026-09-12', priority: 'Medium', status: 'Complete', category: 'Advocate BOD', notes: '', sourceEventId: 'e1', sourceEventTitle: 'Advocate Board Meeting' },
+    { id: 't5', title: 'Retired item', owner: 'Ari Ball', due: '2026-07-01', priority: 'High', status: 'Retired', category: 'Site Visits', notes: '', sourceEventId: '', sourceEventTitle: '' },
+  ],
+  people: [], sops: [], gw: [], rob: [], incoming: [], agendas: [], board: [], deadlines: [],
+  forReview: [], fyis: [], assignments: [], notifications: [], assignmentHistory: [],
+});
+const draw = () => { T.fn('rTasks()'); return ELS['tasks'] ? ELS['tasks'].innerHTML : ''; };
+const titlesIn = h => [...h.matchAll(/<strong>([^<]+)<\/strong>/g)].map(m => m[1]);
+
+if (typeof G('rTasks') === 'function') {
+  T.setST(FIXTURE());
+  T.fn("taskSort=''"); T.fn("taskSortDir='asc'"); T.fn("taskCat='All'");
+  T.fn("taskSt='All'"); T.fn("taskOw='All'"); T.fn("taskQ=''");
+  const out = draw();
+  ok('the Tasks tab renders every task', titlesIn(out).length === 5, titlesIn(out).length + ' rows');
+  ok('the header and the first row agree on column count', (() => {
+    const th = (out.match(/<th[ >]/g) || []).length;
+    const row = out.slice(out.indexOf('<tr><td><strong>'));
+    const td = (row.slice(0, row.indexOf('</tr>')).match(/<td[ >]/g) || []).length;
+    return th === 7 && td === 7;
+  })(), 'a column added to one and not the other silently skews every row');
+  ok('a categorized task shows its badge', />Advocate BOD</.test(out));
+  ok('an uncategorized task shows a dash, never the word undefined', /&mdash;/.test(out) && !/undefined/.test(out));
+  ok('the category filter offers only categories in use on tasks',
+     /taskCat=this\.value/.test(out) && out.includes('>Site Visits<'),
+     'Site Visits is used by a task and by no event, so it must still be offered');
+
+  T.fn("taskSort='title'");
+  ok('sorting by title reaches the rendered rows',
+     titlesIn(draw()).join('|') === 'apply venue deposit|Book travel|Draft the board deck|Retired item|Zebra report',
+     titlesIn(draw()).join('|'));
+  T.fn("taskSort='due'");
+  const dueOrder = titlesIn(draw());
+  ok('the undated task renders LAST under a due sort', dueOrder[dueOrder.length - 1] === 'Zebra report', dueOrder.join('|'));
+  T.fn("taskSortDir='desc'");
+  const marked = draw();
+  ok('the sorted column is marked, and only that one',
+     (marked.match(/sort-ind/g) || []).length === 1 && /&#9660;/.test(marked));
+  T.fn("taskSort=''"); T.fn("taskSortDir='asc'");
+
+  T.fn("taskCat='Advocate BOD'");
+  ok('the category filter narrows the rendered table', titlesIn(draw()).length === 2, titlesIn(draw()).join('|'));
+  T.fn("taskCat='All'");
+}
+
+console.log('\n# What the checklist actually contains (OMS-011)');
+if (typeof G('checklistHtml') === 'function' && typeof G('omsTaskRows') === 'function') {
+  T.setST(FIXTURE());
+  T.fn("taskSort=''"); T.fn("taskCat='All'"); T.fn("taskSt='All'"); T.fn("taskOw='All'"); T.fn("taskQ=''");
+  const cl = G('checklistHtml')(G('omsTaskRows')());
+  ok('one tick box per task', (cl.match(/&#9744;/g) || []).length === 5);
+  ok('groups are named and counted', /Advocate Board Meeting \(2\)/.test(cl) && /Cabinet Retreat \(1\)/.test(cl));
+  ok('unlinked tasks are grouped and sorted last',
+     /Not linked to an event \(2\)/.test(cl) &&
+     cl.lastIndexOf('Not linked to an event') > cl.lastIndexOf('Cabinet Retreat'));
+  ok('the checklist shows the DISPLAY status, agreeing with the table',
+     /Overdue/.test(cl) && !/>In Progress</.test(cl),
+     't1 is overdue against TODAY, so printing its stored In Progress would contradict the Tasks tab');
+  ok('a task with no due date reads as text, not as a blank cell', /No date/.test(cl));
+  ok('nothing renders as undefined', !/undefined/.test(cl));
+}
+
+console.log('\n# Intake validation blocks the write, it does not merely warn (OMS-001)');
+if (typeof G('openNewItem') === 'function' && typeof G('saveModal') === 'function') {
+  const cases = [
+    ['inc', 'incoming',  { f_item: '   ' },                  { f_item: 'Real item', f_source: 'Email', f_status: 'New' }],
+    ['fr',  'forReview', { f_item: '' },                     { f_item: 'Review this', f_by: 'Ari' }],
+    ['brd', 'board',     { f_board: '', f_item: 'x' },       { f_board: 'Advocate', f_item: 'Agenda due', f_status: 'New' }],
+    ['dl',  'deadlines', { f_deadline: 'x', f_dl_due: '' },  { f_deadline: 'Comms plan', f_dl_due: '2026-10-01', f_status: 'New' }],
+  ];
+  for (const [type, coll, bad, good] of cases) {
+    T.setST(FIXTURE());
+    Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;
+    G('openNewItem')(type); Object.assign(FIELDS, bad); G('saveModal')();
+    ok(type + ': an invalid form writes nothing at all', T.st[coll].length === 0,
+       T.st[coll].length + ' rows were written anyway');
+    ok(type + ': and says which field is missing', ALERTS.some(a => /required/i.test(a)), ALERTS.join(' | '));
+
+    Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;
+    G('openNewItem')(type); Object.assign(FIELDS, good); G('saveModal')();
+    ok(type + ': a valid form writes exactly one row', T.st[coll].length === 1, T.st[coll].length + ' rows');
+    if (T.st[coll].length === 1) {
+      ok(type + ': the new row carries an id, so it can sync', !!T.st[coll][0].id,
+         'OMS_MAP drops id-less records and the collection would never sync in either direction');
+    }
+  }
+  ALERTS.length = 0;
+  G('openNewItem')('nonsense');
+  ok('an unhandled card type says so instead of doing nothing',
+     ALERTS.some(a => /cannot be added/i.test(a)), ALERTS.join(' | '));
+}
 
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');

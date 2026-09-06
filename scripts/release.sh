@@ -92,9 +92,24 @@ s = open(path, encoding='utf-8', newline='').read()
 anchor = "OMS_REV_LOG=[\n"
 if anchor not in s:
     raise SystemExit("ERROR: could not find the OMS_REV_LOG anchor")
-entry = "  {rev:%s,date:'%s',summary:'%s'},\n" % (rev, today, summary.replace("\\", "\\\\").replace("'", "\\'"))
+# Escape in this order, or the escapes escape each other: backslash first,
+# then the quote, then newlines. Newlines matter because release notes are
+# written as several paragraphs while OMS_REV_LOG holds each one in a SINGLE
+# quoted JS string, where a raw newline is a syntax error that takes the whole
+# application down. Not hypothetical: the v1.12.0 note hit exactly this. The
+# smoke test caught it and nothing was pushed, but it surfaced as an opaque
+# "Invalid or unexpected token" rather than naming the cause, so the guard
+# below states it plainly instead.
+esc = (summary.replace("\\", "\\\\")
+              .replace("'", "\\'")
+              .replace("\r\n", "\\n")
+              .replace("\r", "\\n")
+              .replace("\n", "\\n"))
+entry = "  {rev:%s,date:'%s',summary:'%s'},\n" % (rev, today, esc)
+if "\n" in entry[:-1]:
+    raise SystemExit("ERROR: the revision entry still holds a raw newline; it would not parse")
 open(path, 'w', encoding='utf-8', newline='').write(s.replace(anchor, anchor + entry, 1))
-print("revision log entry added.")
+print("revision log entry added (%d chars, newlines escaped)." % len(esc))
 PY
 fi
 
