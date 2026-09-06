@@ -114,7 +114,7 @@ PY
 fi
 
 echo
-echo "---------- smoke test (behaviour) ----------"
+echo "---------- smoke test (behavior) ----------"
 node test/smoke.mjs "$OMS" || die "smoke test failed — NOT pushing"
 
 echo

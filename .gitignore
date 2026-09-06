@@ -1,0 +1,4 @@
+# Python bytecode. scripts/*.py are run by the gate; their __pycache__ must
+# never reach the index.
+__pycache__/
+*.pyc

@@ -132,6 +132,70 @@ rc, out = run(t)
 check("the revision log may describe removed behaviour without failing",
       rc == 0, "history is preserved verbatim and must not be policed: " + out.strip()[:110])
 
+# ---------------------------------------------------------------- reachability (Rev 41)
+# The class of drift check 12 could NOT see until reachable_from existed: the
+# symbol stays exactly where it is, and nothing can get to it any more. This is
+# the Rev 34 defect reproduced - Add note lived on the SOP dialog only while the
+# guide described it in general terms, and check 12 reported 27 claims, 0 failed.
+
+# THE HISTORICAL CASE. Take the control off the task dialog and leave it on the
+# SOP dialog, which is exactly the artifact Rev 34 shipped. Built by
+# concatenation because the fragment contains both quote characters.
+Q = chr(39)
+NOTE_FIELD = (
+    '<div class="fg"><label>Add a note</label>'
+    '<input class="fc" id="f_note_add" placeholder="Adds a line with your name and the date"></div>'
+    '<div class="fg"><label>&nbsp;</label>'
+    '<button class="btn bo" onclick="omsAddNoteTo(' + Q + 'f_notes' + Q + ',' + Q + 'f_note_add' + Q + ');return false"'
+)
+NOTE_FIELD_GONE = '<div class="fg"><label>&nbsp;</label><button class="btn bo" onclick="return false"'
+t = sandbox()
+edit_html(t, NOTE_FIELD, NOTE_FIELD_GONE, expect=2)
+rc, out = run(t)
+check("Rev 34 reproduced: Add note on one form while the guide promises it generally",
+      rc == 1 and "attributed-notes-are-described" in out, out.strip()[:200])
+
+# THE GENERAL CASE. Orphan a function: definition untouched, every reference to
+# it renamed. Before Rev 41 this passed for 13 of 13 bindings tried.
+def orphan(tmp, fn):
+    p = tmp / "oms.html"
+    s = p.read_text(encoding="utf-8")
+    defn = "function %s(" % fn
+    out, i = [], 0
+    while True:
+        j = s.find(fn, i)
+        if j < 0:
+            out.append(s[i:]); break
+        if s.startswith(defn, j - len("function ")):
+            out.append(s[i:j + len(fn)]); i = j + len(fn); continue
+        out.append(s[i:j]); out.append("ORPHANED_" + fn); i = j + len(fn)
+    p.write_text("".join(out), encoding="utf-8")
+
+for fn, binding in [("omsSortTasks", "sortable-columns-are-described"),
+                    ("exportChecklist", "checklist-export-is-described"),
+                    ("OMS_OPS_LANDED", "confirmation-means-applied"),
+                    ("omsRobId", "new-workstream-has-an-id"),
+                    ("OMS_RECONCILE_SCHEDULE", "reconcile-watch-slows-not-stops")]:
+    t = sandbox()
+    orphan(t, fn)
+    rc, out = run(t)
+    check("orphaning %s is caught" % fn, rc == 1 and binding in out, out.strip()[:200])
+
+# A host function that no longer exists must be reported STALE, not silently
+# skipped - a binding pointing at a deleted form guards nothing.
+t = sandbox()
+edit_html(t, "function openTaskModal(", "function openTaskModalRenamed(")
+rc, out = run(t)
+check("a reachable_from host that has been renamed is reported STALE",
+      rc == 1 and "STALE" in out and "attributed-notes-are-described" in out, out.strip()[:200])
+
+# ...and reachability must not fire on a binding that is genuinely fine.
+t = sandbox()
+edit_html(t, "OMS keeps checking every few seconds until it does",
+             "OMS keeps checking every few seconds until it does, and says so")
+rc, out = run(t)
+check("rewording text around a reachable binding does not trip it", rc == 0, out.strip()[:200])
+
 print()
 print("=" * 56)
 print("TEXT-CLAIMS GATE: %d passed, %d failed" % (passed, failed))

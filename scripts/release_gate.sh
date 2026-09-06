@@ -216,6 +216,24 @@ else
   fail "13 scripts/no_handwritten_counts.py missing from the repository"
 fi
 
+# ---------- 14. no stray control bytes in a shipped artifact ----------
+# Rev 37 put a literal NUL into oms.html where the two-character escape was
+# meant. Harmless at runtime, and the whole gate passed - but git treats a file
+# containing a NUL as BINARY, which silently turns off the eol=lf normalization
+# that .gitattributes exists to enforce on the one file whose SHA-256 is quoted
+# in every release note and used as the rollback baseline. It was caught because
+# grep started saying "Binary file oms.html matches" on an unrelated command,
+# which is luck rather than a control.
+if [ -f scripts/no_control_bytes.py ]; then
+  if python3 scripts/no_control_bytes.py; then
+    pass "14 artifacts hold no stray control bytes"
+  else
+    fail "14 a shipped artifact holds a control byte or a carriage return (see above)"
+  fi
+else
+  fail "14 scripts/no_control_bytes.py missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"

@@ -57,19 +57,28 @@
     "id": "checklist-export-is-described",
     "code": "function exportChecklist(",
     "requires_text": "checklist",
-    "why": "A control users cannot find is a control that was not built."
+    "why": "A control users cannot find is a control that was not built. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "rTasks"
+    ]
   },
   {
     "id": "reminder-action-is-described",
     "code": "function omsRemindDueSoon(",
     "requires_text": "due in the next three days",
-    "why": "The reminder horizon is a promise about behaviour and must match the code that implements it."
+    "why": "The reminder horizon is a promise about behaviour and must match the code that implements it. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "rTasks"
+    ]
   },
   {
     "id": "sortable-columns-are-described",
     "code": "function omsSortTasks(",
     "requires_text": "Sort any column",
-    "why": "Rev 23 made every column sortable and said so nowhere until Rev 29."
+    "why": "Rev 23 made every column sortable and said so nowhere until Rev 29. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "rTasks"
+    ]
   },
   {
     "id": "blocked-status-is-described",
@@ -87,7 +96,10 @@
     "id": "sign-in-management-is-described",
     "code": "function omsToggleSignIn(",
     "requires_text": "Disable sign-in",
-    "why": "Rev 30 made deactivation block sign-in. Before that it flipped a directory flag only, which read as revoked access and was not."
+    "why": "Rev 30 made deactivation block sign-in. Before that it flipped a directory flag only, which read as revoked access and was not. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "rAdmin"
+    ]
   },
   {
     "id": "retired-status-is-described",
@@ -123,7 +135,10 @@
     "id": "import-derives-category",
     "code": "function omsResolveImportCategory(",
     "requires_text": "OMS reads the event name and works the category out",
-    "why": "Rev 33 made the importer derive a category when the workbook column is blank - 145 of Ari's 182 rows. If that derivation is ever removed, the guide promising it must go at the same time, or the calendar silently fills with Other again while the text says otherwise."
+    "why": "Rev 33 made the importer derive a category when the workbook column is blank - 145 of Ari's 182 rows. If that derivation is ever removed, the guide promising it must go at the same time, or the calendar silently fills with Other again while the text says otherwise. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "parseEventsSheet"
+    ]
   },
   {
     "id": "import-maps-the-workbook-vocabulary",
@@ -147,25 +162,39 @@
     "id": "sop-review-date-is-described",
     "code": "function sopReviewCell(",
     "requires_text": "SOPs have a review date",
-    "why": "OMS-028. The review date drives an Overdue flag on a Dean-facing table; if the field is ever dropped the promise must go with it."
+    "why": "OMS-028. The review date drives an Overdue flag on a Dean-facing table; if the field is ever dropped the promise must go with it. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "rSOPs"
+    ]
   },
   {
     "id": "attributed-notes-are-described",
     "code": "function omsAppendNote(",
     "requires_text": "Notes are added to, not typed over",
-    "why": "OMS-015. This is the whole answer to comments-versus-notes. Users must know an appended note is attributed, or they will keep retyping the box and overwriting each other, which is the defect it fixes."
+    "why": "OMS-015. This is the whole answer to comments-versus-notes. Users must know an appended note is attributed, or they will keep retyping the box and overwriting each other, which is the defect it fixes. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "openTaskModal",
+      "openSopModal"
+    ],
+    "symbol": "omsAddNoteTo"
   },
   {
     "id": "logged-communications-are-described",
     "code": "function omsLogCommunication(",
     "requires_text": "Log a call or an email OMS did not send",
-    "why": "OMS-029. The control sits inside the Notification Queue modal, which most people open only to send a draft, so it is easy to miss and needs describing."
+    "why": "OMS-029. The control sits inside the Notification Queue modal, which most people open only to send a draft, so it is easy to miss and needs describing. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "openNotificationsModal"
+    ]
   },
   {
     "id": "unsynced-self-heals",
     "code": "function OMS_START_RECONCILE(",
     "requires_text": "OMS keeps checking every few seconds until it does",
-    "why": "Rev 35. Users were told to wait and not reload while nothing was checking, so a save that had already landed looked stuck. If the reconciler is ever removed, the promise that it recovers on its own must go with it, or the guide becomes an instruction to wait forever."
+    "why": "Rev 35. Users were told to wait and not reload while nothing was checking, so a save that had already landed looked stuck. If the reconciler is ever removed, the promise that it recovers on its own must go with it, or the guide becomes an instruction to wait forever. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "OMS_QUEUE_SYNC"
+    ]
   },
   {
     "id": "ooo-hidden-is-described",
@@ -177,7 +206,11 @@
     "id": "confirmation-means-applied",
     "code": "function OMS_OPS_LANDED(",
     "requires_text": "holds what you asked for",
-    "why": "Rev 36. Confirmation used to be a bare revision increase, and consolidate.py bumps the revision once per batch INCLUDING rejected operations - so a colleague's save, or an outright rejection, was reported to the user as 'Save successful' while their edit reverted on screen. If this predicate is ever removed the promise that confirmation means the change is really there must go with it, or the interface returns to certifying saves that did not happen."
+    "why": "Rev 36. Confirmation used to be a bare revision increase, and consolidate.py bumps the revision once per batch INCLUDING rejected operations - so a colleague's save, or an outright rejection, was reported to the user as 'Save successful' while their edit reverted on screen. If this predicate is ever removed the promise that confirmation means the change is really there must go with it, or the interface returns to certifying saves that did not happen. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "OMS_WAIT_FOR",
+      "OMS_START_RECONCILE"
+    ]
   },
   {
     "id": "unsynced-says-which-kind",
@@ -195,19 +228,28 @@
     "id": "outstanding-batch-not-resent",
     "code": "function OMS_OP_KEY(",
     "requires_text": "is not sent twice",
-    "why": "Rev 37. OMS_BASE advances only on a confirmed sync, so before this a second save recomputed the diff against the same stale base and re-sent the whole outstanding batch. On 5 Sept one ten-operation batch went to the gateway three times in forty-one seconds with identical payloads, which is 51 of the 53 records in conflicts/unresolved. If the suppression is ever removed the guide must stop promising it, or the conflict log fills with noise again and the one place a genuinely lost edit would show becomes unreadable."
+    "why": "Rev 37. OMS_BASE advances only on a confirmed sync, so before this a second save recomputed the diff against the same stale base and re-sent the whole outstanding batch. On 5 Sept one ten-operation batch went to the gateway three times in forty-one seconds with identical payloads, which is 51 of the 53 records in conflicts/unresolved. If the suppression is ever removed the guide must stop promising it, or the conflict log fills with noise again and the one place a genuinely lost edit would show becomes unreadable. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "OMS_SYNC_ONCE"
+    ]
   },
   {
     "id": "new-workstream-has-an-id",
     "code": "function omsRobId(",
     "requires_text": "now carries an identifier of its own",
-    "why": "Rev 38. Add Workstream pushed a rob row with no id for three revisions after the 5 Sept 2026 migration cleared exactly that condition out of the data. OMS_MAP keeps a record only when id != null and both sides of the sync diff use it, so the row emitted no operation in any direction. If the id assignment is ever dropped, the guide sentence promising the row reaches the shared record has to go with it - and the general push-site sweep in smoke.mjs should fail first."
+    "why": "Rev 38. Add Workstream pushed a rob row with no id for three revisions after the 5 Sept 2026 migration cleared exactly that condition out of the data. OMS_MAP keeps a record only when id != null and both sides of the sync diff use it, so the row emitted no operation in any direction. If the id assignment is ever dropped, the guide sentence promising the row reaches the shared record has to go with it - and the general push-site sweep in smoke.mjs should fail first. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "saveModal"
+    ]
   },
   {
     "id": "reconcile-watch-slows-not-stops",
     "code": "function OMS_RECONCILE_SCHEDULE(",
     "requires_text": "The checking slows down, it does not stop",
-    "why": "Rev 39. Every reconciler tick is one /api/state, which is one GitHub contents read against an installation limit of 5,000 an hour that is shared with sign-in, every save and the consolidator's own pushes. Rev 36 made the reconciler fire for the first time and its flat three-second poll became 1,200 reads an hour per stuck client, uncapped - four of them would have taken the whole system down in a way that would not have looked like polling. The backoff is what makes an indefinite watch affordable, so if it is ever removed the promise that OMS keeps watching has to be re-examined rather than silently made expensive again."
+    "why": "Rev 39. Every reconciler tick is one /api/state, which is one GitHub contents read against an installation limit of 5,000 an hour that is shared with sign-in, every save and the consolidator's own pushes. Rev 36 made the reconciler fire for the first time and its flat three-second poll became 1,200 reads an hour per stuck client, uncapped - four of them would have taken the whole system down in a way that would not have looked like polling. The backoff is what makes an indefinite watch affordable, so if it is ever removed the promise that OMS keeps watching has to be re-examined rather than silently made expensive again. Rev 41 added reachable_from: existence is not reachability, and this binding passed at Rev 34 while the control it guards was on one form out of two.",
+    "reachable_from": [
+      "OMS_START_RECONCILE"
+    ]
   },
   {
     "id": "disable-does-not-end-a-live-session",

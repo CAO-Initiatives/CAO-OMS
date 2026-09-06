@@ -37,7 +37,15 @@ Gate check 12 (`scripts/text_claims.py`, manifest `test/text-claims.json`) enfor
 - `{"text": …, "requires_code": …}` — if the interface says it, the code must do it.
 - `{"code": …, "requires_text": …}` — if the code does it, something must describe it.
 
+A third form, added in Rev 41, is the one that matters most:
+
+- `{"code": …, "requires_text": …, "reachable_from": ["openTaskModal", …]}` — the symbol must also appear *inside* each named function.
+
+**Existence is not reachability, and check 12 could not tell the difference.** Rev 34 shipped the attributed-note control on the SOP dialog only, while the User Guide described it in general terms, and check 12 passed. It was not a one-off: orphan any function a binding names — leave the definition exactly where it is and rename every reference to it — and check 12 missed it every time it was tried, while the whole local gate, the smoke suite included, missed most of them. Use `reachable_from` on any claim whose text is unscoped, and name the forms the sentence is promising it on. `symbol` overrides what must be found inside them.
+
 **When you add a control, a field, or a status, add a binding for it.** When you remove one, the binding becomes stale and the gate says so. Text is checked outside `OMS_REV_LOG`, which is history and is never rewritten. `test/text_claims_negative.py` feeds the checker real drift and must keep passing; a gate that only ever passes is the failure this project already had once, in check 4.
+
+Gate check 14 (`scripts/no_control_bytes.py`, negative suite `test/no_control_bytes_negative.py`) rejects a shipped artifact holding a NUL, any other C0 control character except tab and newline, or a carriage return. **A single NUL makes git classify the file as binary, which silently disables the `eol=lf` normalization `.gitattributes` exists to enforce** — on the one file whose SHA-256 is quoted in every release note, checked by `verify_live.sh`, and used as the rollback baseline. Rev 37 shipped one, at runtime harmlessly, and the entire gate passed; it was noticed only because `grep` began reporting `Binary file oms.html matches` on an unrelated command. Write the escape in the source, never the byte.
 
 ## Things that will bite you
 

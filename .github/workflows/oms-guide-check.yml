@@ -12,6 +12,12 @@ on:
       - 'test/**'
       - 'scripts/**'
       - 'gate4_preflight.py'
+      # CLAUDE.md was missing from this list, so a commit that changed only
+      # CLAUDE.md deployed with no checks at all - including check 13, which
+      # exists to police that exact file. Confirmed against the Actions API:
+      # e5d8fae, whose message is "CLAUDE.md: refresh figures that had drifted
+      # six revisions out of date", ran one workflow and it was Pages.
+      - 'CLAUDE.md'
       - '.github/workflows/oms-guide-check.yml'
   pull_request:
     branches: [main]
@@ -40,5 +46,5 @@ jobs:
 
       # The gate checks that the artifact is well FORMED. This checks that it
       # BEHAVES. The gw/rob defect passed every gate check ever written.
-      - name: Behavioural smoke test
+      - name: Behavioral smoke test
         run: node test/smoke.mjs oms.html
