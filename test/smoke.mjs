@@ -281,9 +281,17 @@ if (typeof cats === 'function') {
   ok('cadence is not folded into the category list', !list.includes('Recurring'),
      'a category holds one value; Recurring is a separate boolean for exactly this reason');
 }
+// Rev 18 note: this once matched any openModal call mentioning "categor", which
+// caught the legitimate standalone Categories manager. The real invariant is
+// narrower - the EVENT FORM's category control must not open a dialog, because
+// that would replace the event being edited.
 ok('a category is added inline, not through a second modal',
-   /f_cat_new/.test(html) && !/openModal\([^)]*categor/i.test(main),
+   /f_cat_new/.test(html) && /id="f_newcat"/.test(html) &&
+   !/function omsToggleNewCat[\s\S]{0,400}?openModal\(/.test(main),
    'one overlay, one #mbody');
+ok('the categories manager is not reachable from inside the event form',
+   !/function openEvModal[\s\S]{0,4000}?openCategoriesModal\(/.test(main),
+   'opening it mid-edit would destroy the event being edited');
 
 // ---------------------------------------------------------------- 9. Saved views (item 4)
 console.log('\n# User-editable filters, saved per user (Rev 17, item 4)');
@@ -365,6 +373,91 @@ if (typeof dayLabel === 'function') {
   ok('a single-day event shows a bare day number',
      dayLabel({ date: '2026-06-10' }, 5, 2026) === '10');
 }
+
+// ================================================================ REV 18
+// Category management. Written before the implementation, as todoCheck, then
+// promoted to ok(). The fixtures below are the LIVE production shape read from
+// canonical state at revision 61 on 6 Sept 2026 — including the SOM collision,
+// which was really there, not invented for the test.
+console.log('\n# Category codes must disambiguate (Rev 18)');
+const glyphMap = G('categoryGlyphMap'), catGlyphF = G('catGlyph'),
+      catColorF = G('catColor'), catBadgeF = G('catBadge'),
+      renameCat = G('renameCategory'), catCount = G('categoryEventCount'),
+      evCats = G('eventCategories');
+
+ok('categoryGlyphMap is defined', typeof glyphMap === 'function');
+if (typeof glyphMap === 'function' && typeof evCats === 'function') {
+  T.setST({ events: [
+    { id: 'e1', category: 'SOM Events' },
+    { id: 'e2', category: 'School of Medicine Events' },
+    { id: 'e3', category: 'Chairs' },
+    { id: 'e4', category: 'Chair Meetings' },
+    { id: 'e5', category: "Dean's Office" },
+  ] });
+  const m = glyphMap(), codes = Object.values(m);
+  ok('no two categories share a code', new Set(codes).size === codes.length,
+     'the legend only works if the code actually disambiguates; colour must never be the sole cue');
+  ok('every offered category has a code', evCats().every(c => !!m[c]));
+  ok('built-ins keep their documented codes',
+     m['SOM Events'] === 'SOM' && m['Advocate BOD'] === 'ADV' &&
+     m['WFUBSM BOD'] === 'BSM' && m['WFU BOT'] === 'BOT' && m['Board Meeting'] === 'BRD');
+  ok('the category that collided in production is disambiguated',
+     !!m['School of Medicine Events'] && m['School of Medicine Events'] !== 'SOM',
+     'both derive to SOM; the built-in keeps it and the added one must not shadow it');
+  ok('the map is deterministic across calls',
+     JSON.stringify(glyphMap()) === JSON.stringify(m),
+     'every user computes the legend locally, so it must come out identical for everyone');
+  ok('a built-in never loses its code to an added category',
+     m['Chairs'] === 'CHR' && m['Chair Meetings'] !== 'CHR');
+}
+
+console.log('\n# Category colour is derived, never grey by accident (Rev 18)');
+if (typeof catColorF === 'function' && typeof catBadgeF === 'function') {
+  ok('a built-in keeps its palette class', catColorF('Cabinet') === 'ccab' && catColorF('FEC') === 'cfec');
+  ok('a built-in keeps its badge class', catBadgeF('Cabinet') === 'br3');
+  ok('an added category still gets a real palette class',
+     /^c[a-z0-9]+$/.test(catColorF('School of Medicine Events')),
+     'a renamed category must not silently fall back to grey');
+  ok('colour derivation is stable for the same name',
+     catColorF("Dean's Office") === catColorF("Dean's Office"));
+  ok('the derived grid class is actually styled',
+     new RegExp('\\.' + catColorF("Dean's Office") + '\\{').test(html));
+  ok('the derived badge class is actually styled',
+     new RegExp('\\.' + catBadgeF("Dean's Office") + '\\{').test(html));
+}
+
+console.log('\n# Renaming and merging categories (Rev 18)');
+ok('renameCategory is defined', typeof renameCat === 'function');
+if (typeof renameCat === 'function' && typeof catCount === 'function') {
+  T.setST({ events: [
+    { id: 'e1', category: 'School of Medicine Events' },
+    { id: 'e2', category: 'School of Medicine Events' },
+    { id: 'e3', category: 'Cabinet' },
+  ], tasks: [], people: [] });
+  ok('categoryEventCount reports real usage', catCount('School of Medicine Events') === 2);
+  const n = renameCat('School of Medicine Events', 'SOM Events');
+  ok('rename rewrites every event carrying the category', n === 2);
+  ok('renaming into an EXISTING category merges them',
+     T.st.events.filter(e => e.category === 'SOM Events').length === 2,
+     'this is the 8-event School of Medicine Events / SOM Events duplicate in production');
+  ok('events on other categories are untouched',
+     (T.st.events.find(e => e.id === 'e3') || {}).category === 'Cabinet');
+  ok('the old category is no longer offered',
+     typeof evCats === 'function' && !evCats().includes('School of Medicine Events'));
+  ok('renaming to the same name is a no-op', renameCat('Cabinet', 'Cabinet') === 0);
+  ok('renaming to a blank name is a no-op', renameCat('Cabinet', '   ') === 0);
+  ok('renaming an unused category changes nothing', renameCat('Nothing At All', 'X') === 0);
+  ok('a blank source is a no-op', renameCat('', 'X') === 0);
+}
+ok('a rename saves through the normal path, not a direct state write',
+   /function renameCategory[\s\S]{0,700}?save\(\)/.test(main),
+   'events all carry ids, so OMS_DIFF emits ordinary update operations');
+ok('the categories manager is its own dialog, opened from the toolbar',
+   /openCategoriesModal\(\)/.test(main) && /t==='cats'/.test(main));
+ok('the event form still adds a category inline',
+   /f_cat_new/.test(html), 'one overlay: adding mid-edit must not open a second dialog');
+ok('renaming is blocked for read-only users',
+   /function openCategoriesModal[\s\S]{0,200}?OMS_IS_EDITOR\(\)/.test(main));
 
 // ---------------------------------------------------------------- 5. release metadata
 console.log('\n# Release metadata');
