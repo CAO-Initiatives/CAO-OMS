@@ -168,6 +168,28 @@
     ]
   },
   {
+    "id": "cadence-is-set-by-hand",
+    "code": "id=\"f_recurring\"",
+    "requires_text": "Nothing fills this in for you",
+    "why": "OMS-041. The checkbox is the ONLY way cadence is ever set, and both places that described it said the opposite - the form hint said 'The Outlook sync populates this field' and the guide said 'The Outlook calendar sync fills this in automatically'. There is no Outlook calendar sync; the app's own notification callout says the Outlook integration is a mailto draft precisely to avoid Graph. Text telling users a field fills itself is why 248 of 255 events carry no cadence at all.",
+    "reachable_from": [
+      "openEvModal"
+    ],
+    "symbol": "f_recurring"
+  },
+  {
+    "id": "no-calendar-sync-may-be-claimed",
+    "text": "sync populates this field",
+    "requires_code": "OMS_OUTLOOK_SYNC",
+    "why": "OMS-041 tripwire. This sentence was in the artifact for two revisions with nothing behind it. If anybody writes it again, the gate now demands a symbol that will only exist once a calendar sync is actually built. Do not satisfy this by defining an empty OMS_OUTLOOK_SYNC - delete the claim instead."
+  },
+  {
+    "id": "no-automatic-cadence-may-be-claimed",
+    "text": "fills this in automatically",
+    "requires_code": "OMS_OUTLOOK_SYNC",
+    "why": "OMS-041 tripwire, guide wording of the same false claim. Paired with no-calendar-sync-may-be-claimed because the two sentences drifted independently, in two files' worth of prose, saying the same untrue thing."
+  },
+  {
     "id": "sop-reviews-reach-the-dashboard",
     "code": "function sopReviewCard(",
     "requires_text": "SOP Reviews Due",

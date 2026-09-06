@@ -1393,6 +1393,25 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
      /calCadence==='standing'/.test(rcal) && /e\.recurring/.test(rcal));
   ok('OMS-041: standing and one-off partition the events', /calCadence==='oneoff'/.test(rcal));
 
+  // Rev 47 (OMS-041). Two sentences promised an Outlook calendar sync that has
+  // never existed - one on the Event form, one in the User Guide - and that is
+  // why 248 of 255 events carry no cadence at all: the interface told people
+  // not to bother ticking the box. The revision log records the removal, so
+  // search the prose OUTSIDE it, the same cut check 12 makes.
+  {
+    const cut = html.indexOf('const OMS_REV_LOG');
+    const end = cut > -1 ? html.indexOf('];', cut) : -1;
+    const prose = (cut > -1 && end > -1) ? html.slice(0, cut) + html.slice(end) : html;
+    ok('OMS-041: nothing claims an Outlook sync populates cadence',
+       !/sync populates this field/.test(prose));
+    ok('OMS-041: nothing claims cadence is filled in automatically',
+       !/fills this in automatically/.test(prose));
+    ok('OMS-041: the form says plainly that cadence is set by hand',
+       /Nothing fills this in for you/.test(prose));
+    ok('OMS-041: and warns that re-importing a source clears it',
+       /replaces every event for that source/.test(prose));
+  }
+
   // OMS-015: an appended note must never destroy what is already there.
   const append = G('omsAppendNote');
   ok('omsAppendNote is defined', typeof append === 'function');
