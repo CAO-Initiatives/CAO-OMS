@@ -1368,6 +1368,62 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   }
 }
 
+// ---------------------------------------------------------------- Rev 34
+{
+  // OMS-041: cadence is a second axis, not more categories.
+  const rcal = String(G('rCal') || '');
+  ok('OMS-041: the calendar filters on recurring, not on a new field',
+     /calCadence==='standing'/.test(rcal) && /e\.recurring/.test(rcal));
+  ok('OMS-041: standing and one-off partition the events', /calCadence==='oneoff'/.test(rcal));
+
+  // OMS-015: an appended note must never destroy what is already there.
+  const append = G('omsAppendNote');
+  ok('omsAppendNote is defined', typeof append === 'function');
+  if (typeof append === 'function') {
+    const prior = 'Existing note from somebody else.';
+    const out = append(prior, 'Chased this today');
+    ok('the earlier note survives verbatim', out.indexOf(prior) === 0);
+    ok('the addition lands on its own line', out.split('\n').length === 2);
+    // Signed out in the harness, so the stamp carries the date alone. Both
+    // shapes are accepted; what is NOT accepted is the dangling separator
+    // that the first cut produced for every user, signed in or not.
+    ok('the addition is dated', /^\[(.+ \u00b7 )?\d{2} \w{3}\] Chased this today$/.test(out.split('\n')[1]));
+    ok('no attribution is claimed when nobody is signed in',
+       !/\[\s*\u00b7/.test(out) && typeof G('omsMe') === 'function');
+    ok('an empty addition changes nothing at all', append(prior, '   ') === prior);
+    ok('a first note does not start with a blank line', append('', 'First').indexOf('[') === 0);
+    ok('a null existing note is handled', typeof append(null, 'x') === 'string');
+    // The defect this fixes: two people writing in turn must both survive.
+    const two = append(append('', 'Ari note'), 'Maggie note');
+    ok('two notes in sequence both survive', /Ari note/.test(two) && /Maggie note/.test(two));
+  }
+
+  // OMS-028: an overdue review has to be visible, not merely stored.
+  const cell = G('sopReviewCell');
+  ok('sopReviewCell is defined', typeof cell === 'function');
+  if (typeof cell === 'function') {
+    ok('a blank review date renders as a dash, not as overdue', /mdash/.test(cell({ reviewDue: '' })));
+    ok('a past review date is flagged Overdue', /Overdue/.test(cell({ reviewDue: '2020-01-01' })));
+    ok('a future review date is shown but not flagged',
+       !/Overdue/.test(cell({ reviewDue: '2099-01-01' })) && cell({ reviewDue: '2099-01-01' }).length > 10);
+  }
+  const soon = G('sopsDueSoon');
+  ok('sopsDueSoon is defined', typeof soon === 'function');
+
+  // OMS-029: logging is inline in the queue, because a second modal would
+  // destroy the first - the rule that put the new-person form in the task dialog.
+  const notif = String(G('openNotificationsModal') || '');
+  ok('OMS-029: the log form is inline in the existing modal, not a second one',
+     /lc_subject/.test(notif) && (notif.match(/openModal\(/g) || []).length === 1);
+  ok('OMS-029: a logged entry offers no draft button, having already been sent',
+     /n\.type==='logged'/.test(notif));
+  const logfn = G('omsLogCommunication');
+  ok('omsLogCommunication is defined', typeof logfn === 'function');
+  ok('OMS-029: logging reuses notifications rather than a new collection',
+     /ST\.notifications\.unshift/.test(String(logfn || '')) &&
+     !/ST\.communications/.test(String(logfn || '')));
+}
+
 const suggest = G('omsSuggestedPassword');
 
 // ---------------------------------------------------------------- Rev 32: Add User issues the sign-in

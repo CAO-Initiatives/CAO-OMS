@@ -136,5 +136,29 @@
     "code": "function OMS_IS_EDITOR(",
     "requires_text": "OMS has one read tier",
     "why": "Bound to the client's access-level helper because check 12 only reads oms.html. Writes are enforced at the gateway but reads are not segmented: every signed-in account receives all of canonical state. Users will assume read-only means restricted visibility unless told plainly, and that assumption is how something confidential ends up in a note."
+  },
+  {
+    "id": "cadence-filter-is-described",
+    "code": "calCadence==='standing'",
+    "requires_text": "Standing only",
+    "why": "OMS-041. A filter nobody can find is a filter that was not built, and this one reuses an existing field rather than adding a visible one, so nothing else hints it exists."
+  },
+  {
+    "id": "sop-review-date-is-described",
+    "code": "function sopReviewCell(",
+    "requires_text": "SOPs have a review date",
+    "why": "OMS-028. The review date drives an Overdue flag on a Dean-facing table; if the field is ever dropped the promise must go with it."
+  },
+  {
+    "id": "attributed-notes-are-described",
+    "code": "function omsAppendNote(",
+    "requires_text": "Notes are added to, not typed over",
+    "why": "OMS-015. This is the whole answer to comments-versus-notes. Users must know an appended note is attributed, or they will keep retyping the box and overwriting each other, which is the defect it fixes."
+  },
+  {
+    "id": "logged-communications-are-described",
+    "code": "function omsLogCommunication(",
+    "requires_text": "Log a call or an email OMS did not send",
+    "why": "OMS-029. The control sits inside the Notification Queue modal, which most people open only to send a draft, so it is easy to miss and needs describing."
   }
 ]
