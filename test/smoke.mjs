@@ -2922,6 +2922,61 @@ console.log('\n# Rev 65: one search box across four record types, and templates 
   const idx = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   ok('Rev 66: the sign-in page carries one too, naming the same gateway', /Content-Security-Policy/.test(idx) && /connect-src 'self' https:\/\/cao-oms-gateway\.vercel\.app/.test(idx));
 }
+// ---- Rev 67 (FAB-40): typing must not destroy the box being typed into.
+console.log('\n# Rev 67: a search box survives being typed into');
+{
+  // Behavioural, not textual: the helper is actually run against the harness
+  // element mock, which is given a focus() and a setSelectionRange() that record
+  // what happened. The product code is exactly as it ships.
+  T.fn("globalThis.__pe=document.getElementById('probe-box');" +
+       "globalThis.__pe.selectionStart=3;globalThis.__pe.selectionEnd=5;" +
+       "globalThis.__pe.setSelectionRange=function(a,b){globalThis.__caret=[a,b]};" +
+       "globalThis.__pe.focus=function(){document.activeElement=globalThis.__pe};" +
+       "document.activeElement=globalThis.__pe;globalThis.__ran=0;globalThis.__caret=null");
+  T.fn("omsRerenderKeepingCaret('probe-box',function(){globalThis.__ran++})");
+  ok('Rev 67: the render still runs', T.fn('globalThis.__ran') === 1, T.fn('globalThis.__ran') + ' renders');
+  ok('Rev 67: ...and focus is back on the box afterwards',
+     T.fn("document.activeElement===document.getElementById('probe-box')") === true);
+  ok('Rev 67: ...with the caret exactly where it was, not reset to the end',
+     T.fn('JSON.stringify(globalThis.__caret)') === '[3,5]', T.fn('JSON.stringify(globalThis.__caret)'));
+  // Restoring focus to a box nobody was typing in would steal it from wherever
+  // the person actually is.
+  T.fn("document.activeElement=document.getElementById('somewhere-else');globalThis.__ran=0");
+  T.fn("omsRerenderKeepingCaret('probe-box',function(){globalThis.__ran++})");
+  ok('Rev 67: a render nobody was typing into does not steal focus',
+     T.fn('globalThis.__ran') === 1 &&
+     T.fn("document.activeElement===document.getElementById('somewhere-else')") === true);
+  // A missing element must not throw and take the whole render down with it.
+  T.fn("globalThis.__ran=0");
+  ok('Rev 67: an id that matches nothing renders anyway rather than throwing',
+     (() => { try { T.fn("omsRerenderKeepingCaret('no-such-box',function(){globalThis.__ran++})");
+                    return T.fn('globalThis.__ran') === 1 } catch (e) { return false } })());
+
+  // All three self-re-rendering boxes route through it, by id.
+  ok('Rev 67: the Tasks box refocuses itself by its own id',
+     /id="task-search"[^>]*oninput="taskQ=this\.value;omsSavePrefs\(\);omsRerenderKeepingCaret\('task-search',rTasks\)"/.test(html));
+  ok('Rev 67: the SOPs box refocuses itself by its own id',
+     /id="sop-search"[^>]*oninput="sopQ=this\.value;omsRerenderKeepingCaret\('sop-search',rSOPs\)"/.test(html));
+  ok('Rev 67: the Calendars box refocuses itself by its own id',
+     /omsRerenderKeepingCaret\('cal-search',rCal\)/.test(String(G('calSearchInput'))));
+  // The Rev 12 mechanism, which is the thing that quietly failed.
+  ok('Rev 67: no search path restores focus from a frame callback any more',
+     !/requestAnimationFrame/.test(String(G('calSearchInput'))) &&
+     !/requestAnimationFrame/.test(String(G('omsRerenderKeepingCaret'))));
+  // The five choice controls that redraw their own screen keep focus too.
+  ok('Rev 67: the Tasks Owner and Category filters keep focus after a choice',
+     /id="task-owner"[^>]*omsRerenderKeepingCaret\('task-owner',rTasks\)/.test(html) &&
+     /id="task-cat"[^>]*omsRerenderKeepingCaret\('task-cat',rTasks\)/.test(html));
+  ok('Rev 67: so does the SOPs category filter and the Weekly Brief week picker',
+     /id="sop-cat"[^>]*omsRerenderKeepingCaret\('sop-cat',rSOPs\)/.test(html) &&
+     /id="brief-week"[^>]*omsRerenderKeepingCaret\('brief-week',rBrief\)/.test(html));
+  ok('Rev 67: the bulk-status picker resets itself before the redraw, not after',
+     /id="task-bulk"[^>]*onchange="const v=this\.value;this\.value='';omsRerenderKeepingCaret\('task-bulk',function\(\)\{omsBulkStatus\(v\)\}\)"/.test(html));
+  // The header box is correct by construction: it paints a sibling panel.
+  ok('Rev 67: the header box still paints a separate panel rather than its own container',
+     /getElementById\('gsres'\)/.test(String(G('omsGlobalSearchInput'))) &&
+     !/renderAll\(|rTasks\(|rCal\(|rSOPs\(/.test(String(G('omsGlobalSearchInput'))));
+}
 ok('Rev 65: the header carries the search box', /<input class="srch gsin" id="gsearch"/.test(html) && /id="gsres" class="gsres" hidden/.test(html));
 
 ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phone neither scrolls sideways nor zooms on focus',
@@ -3664,7 +3719,7 @@ console.log('\n# Rev 54: categories, the Brief and the shell (R-04, A-12, C-08, 
      !/ST\.briefWeek=this\.value;save\(\)/.test(main),
      'a viewer was refused, and everyone else queued a sync, merely to look at another week');
   ok('C-15: briefWeekView alone drives the view',
-     /onchange="briefWeekView=this\.value;rBrief\(\)"/.test(main));
+     /onchange="briefWeekView=this\.value;omsRerenderKeepingCaret\('brief-week',rBrief\)"/.test(main));
   ok('C-15: briefWeekStart still reads the stored default',
      /ST\.briefWeek/.test(String(G('briefWeekStart') || '')));
 

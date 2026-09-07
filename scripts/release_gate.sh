@@ -241,6 +241,29 @@ else
   fail "14 scripts/no_control_bytes.py missing from the repository"
 fi
 
+# ---------- 15. no text input may destroy itself while being typed into ----------
+# Three search boxes re-rendered their own container on every keystroke, so the
+# element being typed into was replaced, focus fell to <body>, and only the first
+# letter of a search ever landed. Rev 12 fixed exactly this for the calendar box
+# and the fix was never generalized - the Tasks and SOPs boxes carried the same
+# defect for fifty-odd revisions, and nothing in the gate, the smoke suite or the
+# text claims mentioned focus, so nothing could say so. The negative control runs
+# first: a guard that only ever passes is the failure this project has had twice.
+if [ -f scripts/no_focus_losing_inputs.py ] && [ -f test/no_focus_losing_inputs_negative.py ]; then
+  if python3 test/no_focus_losing_inputs_negative.py >/dev/null 2>&1; then
+    if python3 scripts/no_focus_losing_inputs.py; then
+      pass "15 no typing control destroys itself as you type"
+    else
+      fail "15 a text input re-renders its own container with nothing restoring focus (see above)"
+    fi
+  else
+    python3 test/no_focus_losing_inputs_negative.py || true
+    fail "15 the focus guard no longer catches real drift - its negative control failed"
+  fi
+else
+  fail "15 scripts/no_focus_losing_inputs.py or its negative control is missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"

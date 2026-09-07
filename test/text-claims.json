@@ -1182,5 +1182,35 @@
     "text": "cannot forbid inline script",
     "requires_code": "'unsafe-inline'",
     "why": "Rev 66. The guide admits the limit; if inline script were ever forbidden the sentence would be false, and so would the whole application."
+  },
+  {
+    "id": "rev67-caret-helper-exists",
+    "text": "The box keeps focus and your cursor keeps its place",
+    "requires_code": "function omsRerenderKeepingCaret(",
+    "why": "Rev 67 (FAB-40). The guide promises typing works; this one helper is the whole of that promise."
+  },
+  {
+    "id": "rev67-caret-helper-reaches-all-three",
+    "code": "function omsRerenderKeepingCaret(",
+    "requires_text": "filter the list as you type",
+    "reachable_from": [
+      "calSearchInput",
+      "rTasks",
+      "rSOPs"
+    ],
+    "symbol": "omsRerenderKeepingCaret",
+    "why": "Rev 67. Existence is not reachability, and this defect IS the reachability failure: Rev 12 fixed the calendar and left the identical bug on Tasks and SOPs for fifty revisions. All three screens must route through the helper, so all three are named here."
+  },
+  {
+    "id": "rev67-no-frame-deferred-refocus",
+    "text": "The box keeps focus and your cursor keeps its place",
+    "forbids_code": "requestAnimationFrame(()=>{const el=document.getElementById('cal-search')",
+    "why": "Rev 67. The Rev 12 mechanism was a frame-deferred refocus: dead in a hidden tab, stubbed to a no-op by the smoke harness, and it loses keystrokes typed inside the gap. It must not come back."
+  },
+  {
+    "id": "rev67-choice-controls-keep-focus",
+    "text": "after a choice the keyboard stays on the control you just used",
+    "requires_code": "omsRerenderKeepingCaret('task-owner',rTasks)",
+    "why": "Rev 67. The filter dropdowns redraw the screen that draws them, so without the helper a keyboard user is returned to the top of the document after every choice. The Owner filter is the representative site; gate check 15 holds the rest."
   }
 ]
