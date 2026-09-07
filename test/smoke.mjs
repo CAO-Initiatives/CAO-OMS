@@ -1814,6 +1814,69 @@ const E = id => ctx.document.getElementById(id);
     ok('editing an existing person issues no new account', calls.length === 0);
     ok('and the edit still lands', (T.st.people[0] || {}).role === 'Program Manager');
 
+
+    // ---- Rev 52: the Admin Console's controls reach the account they describe.
+    {
+      const dea = G('adminDeactivate'), act = G('adminActivate'), del = G('adminHardDelete');
+      ok('Rev 52: deactivate, reactivate and delete are async - they await the gateway', [dea, act, del].every(f => typeof f === 'function' && f.constructor.name === 'AsyncFunction'));
+      ctx.omsAccountAction = async (a, p) => { calls.push([a, p]); return { ok: true }; };
+      // Edit: a changed access level goes to the gateway first.
+      T.fn(`OMS_ACCOUNTS=[{id:'jane.westgate@advocatehealth.org',role:'editor',disabled:false},{id:'boss@x.org',role:'admin',disabled:false}]`);
+      T.st.people = [{ id: 'jane-westgate', name: 'Jane Westgate', email: 'jane.westgate@advocatehealth.org', role: 'PM', accessRole: 'editor', active: true },
+                     { id: 'boss', name: 'The Boss', email: 'boss@x.org', role: 'Dean', accessRole: 'admin', active: true }];
+      fill('Jane Westgate', 'jane.westgate@advocatehealth.org', '', false); FIELDS['au_access'] = 'viewer'; calls.length = 0;
+      await saveUser('jane-westgate');
+      ok('Rev 52: changing the access level calls the gateway role action', calls.length === 1 && calls[0][0] === 'role' && calls[0][1].role === 'viewer' && calls[0][1].id === 'jane.westgate@advocatehealth.org', JSON.stringify(calls));
+      ok('Rev 52: ...and the directory follows', T.st.people[0].accessRole === 'viewer');
+      T.fn(`OMS_ACCOUNTS[0].role='viewer'`); // the stub did not refresh the account list; the real call does
+      calls.length = 0; FIELDS['au_access'] = 'viewer';
+      await saveUser('jane-westgate');
+      ok('Rev 52: an unchanged level makes no gateway call', calls.length === 0);
+      ctx.omsAccountAction = async () => { throw new Error('That is the last active administrator.'); };
+      fill('The Boss', 'boss@x.org', '', false); FIELDS['au_access'] = 'viewer'; ALERTS.length = 0;
+      await saveUser('boss');
+      ok('Rev 52: a refused role change leaves the directory alone and says so', T.st.people[1].accessRole === 'admin' && ALERTS.some(a => /NOT changed/.test(a)), JSON.stringify(ALERTS));
+      // Deactivate blocks the account first; a refusal leaves the flag alone.
+      ctx.omsAccountAction = async (a, p) => { calls.push([a, p]); return { ok: true }; }; calls.length = 0;
+      await dea('jane-westgate');
+      ok('Rev 52: deactivate blocks the sign-in account', calls.length === 1 && calls[0][0] === 'disable', JSON.stringify(calls));
+      ok('Rev 52: ...and then marks the directory row', T.st.people[0].active === false);
+      T.fn(`OMS_ACCOUNTS[0].disabled=true`); calls.length = 0;
+      await act('jane-westgate');
+      ok('Rev 52: reactivate restores the sign-in account', calls.length === 1 && calls[0][0] === 'enable' && T.st.people[0].active === true, JSON.stringify(calls));
+      T.fn(`OMS_ACCOUNTS[0].disabled=false`);
+      ctx.omsAccountAction = async () => { throw new Error('You cannot disable your own account.'); }; ALERTS.length = 0;
+      await dea('jane-westgate');
+      ok('Rev 52: a refused block leaves the person active', T.st.people[0].active === true && ALERTS.some(a => /Not deactivated/.test(a)));
+      // Delete removes the account first and stops if it cannot.
+      ctx.omsAccountAction = async (a, p) => { calls.push([a, p]); return { ok: true }; }; calls.length = 0;
+      await del('jane-westgate');
+      ok('Rev 52: delete removes the sign-in account', calls.length === 1 && calls[0][0] === 'delete' && calls[0][1].id === 'jane.westgate@advocatehealth.org', JSON.stringify(calls));
+      ok('Rev 52: ...and then the directory row', !T.st.people.some(p => p.id === 'jane-westgate'));
+      T.st.people.push({ id: 'jane-westgate', name: 'Jane Westgate', email: 'jane.westgate@advocatehealth.org', role: 'PM', accessRole: 'editor', active: true });
+      ctx.omsAccountAction = async () => { throw new Error('gateway down'); }; ALERTS.length = 0;
+      await del('jane-westgate');
+      ok('Rev 52: when the account cannot be removed the row stays', T.st.people.some(p => p.id === 'jane-westgate') && ALERTS.some(a => /NOT removed/.test(a)), JSON.stringify(ALERTS));
+      ALERTS.length = 0; calls.length = 0; ctx.omsAccountAction = async (a, p) => { calls.push([a, p]); return { ok: true }; };
+      await del('boss');
+      ok('Rev 52: an account that is really an admin cannot be deleted, whatever the directory says', calls.length === 0 && T.st.people.some(p => p.id === 'boss') && ALERTS.some(a => /Administrator/.test(a)));
+      // Add: a duplicate is refused; a new id follows the slug convention.
+      T.fn(`OMS_ACCOUNTS=[]`); calls.length = 0; ALERTS.length = 0;
+      fill('Jane Westgate', 'Jane.Westgate@advocatehealth.org', '', false);
+      await saveUser('');
+      ok('Rev 52: adding somebody already in the directory is refused', T.st.people.filter(p => p.name === 'Jane Westgate').length === 1 && ALERTS.some(a => /already in the directory/.test(a)));
+      fill('Terri Yates', 'Terri.Yates@advocatehealth.org', '', false);
+      await saveUser('');
+      const ty = T.st.people.find(p => p.name === 'Terri Yates');
+      ok('Rev 52: a new person gets a slug id', !!ty && ty.id === 'terri-yates', ty && ty.id);
+      fill('Terri Yates', 'Another.Yates@advocatehealth.org', '', false);
+      await saveUser('');
+      ok('Rev 52: a same-name different-address person is refused as a duplicate by name', T.st.people.filter(p => p.name === 'Terri Yates').length === 1);
+      ok('Rev 52: the Edit dialog draws the level from the account', /const acctE=omsAccountFor\(p\.email\)/.test(main) && !/\(p\.accessRole\|\|'editor'\)==='viewer'/.test(main));
+      ok('Rev 52: a key the record did not have carries an explicit null base value', /base\[k\]=a\[k\]===undefined\?null:a\[k\]/.test(main));
+      const ck = G('OMS_CHANGED_KEYS')({ id: 't1', title: 'a' }, { id: 't1', title: 'a', category: 'X' });
+      ok('Rev 52: ...seen at the seam', ck.keys.join() === 'category' && ck.base.category === null && ck.changes.category === 'X', JSON.stringify(ck));
+    }
     ctx.omsAccountAction = realAction; ctx.save = realSave;
     ctx.closeModal = realClose; ctx.rAdmin = realR;
     Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;

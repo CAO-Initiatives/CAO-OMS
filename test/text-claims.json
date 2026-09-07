@@ -483,5 +483,46 @@
     "text": "The middle part is random, so a name does not determine a password",
     "requires_code": "function omsRandomDigits(",
     "why": "Rev 51 (E-01). The generator returned surname plus a fixed suffix, in a public file. The hint now says the middle is random; this binds it to the generator."
+  },
+  {
+    "id": "rev52-delete-removes-the-sign-in",
+    "code": "function omsRemoveSignIn(",
+    "symbol": "omsRemoveSignIn",
+    "requires_text": "sign-in account included",
+    "reachable_from": [
+      "adminHardDelete"
+    ],
+    "why": "Rev 52 (A-03). omsRemoveSignIn was defined in Rev 30 and called from nowhere for twenty revisions while the Delete confirm said the user was removed completely. Existence is not reachability."
+  },
+  {
+    "id": "rev52-access-level-reaches-the-gateway",
+    "text": "Set access levels: admin",
+    "requires_code": "omsAccountAction('role'",
+    "why": "Rev 52 (A-01, D-01). The nav tooltip promised access levels while the control wrote a directory field the gateway never read. The gateway gained a role action in OMS-063; this binds the promise to the call."
+  },
+  {
+    "id": "rev52-role-action-is-reachable-from-the-edit-dialog",
+    "code": "omsAccountAction('role'",
+    "requires_text": "changes the level their sign-in account is enforced at",
+    "reachable_from": [
+      "saveAdminUser"
+    ],
+    "why": "Rev 52. The role call has to sit on the Edit User save path, or the dropdown is decoration again."
+  },
+  {
+    "id": "rev52-deactivate-blocks-sign-in",
+    "text": "blocks their sign-in",
+    "requires_code": "await omsAccountAction('disable',{id:acct.id})",
+    "why": "Rev 52 (A-02). The tooltip said the person would lose access on next login while the function set a flag authentication never read. The Rev 30 comment above omsToggleSignIn called that exact trap out and left it in place."
+  },
+  {
+    "id": "rev52-deactivate-disable-is-reachable",
+    "code": "await omsAccountAction('disable',{id:acct.id})",
+    "symbol": "omsAccountAction('disable'",
+    "requires_text": "Deactivate blocks",
+    "reachable_from": [
+      "adminDeactivate"
+    ],
+    "why": "Rev 52. The block has to happen on the Deactivate button's own path, not only on the separate Disable sign-in control."
   }
 ]
