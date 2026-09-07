@@ -2471,6 +2471,32 @@ console.log('\n# The reconciler, executed (Rev 36)');
     ok('Rev 54: ...ending Connected', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
   }
 
+  // ---- Rev 55: every read of the link field goes through safeLink (the SOP branch was missed in Rev 51 and found live)
+  ok('Rev 55: every link field read is normalized on save', (main.match(/gv\('f_link'\)/g) || []).length === (main.match(/safeLink\(gv\('f_link'\)\)/g) || []).length && (main.match(/gv\('f_link'\)/g) || []).length >= 4, (main.match(/gv\('f_link'\)/g) || []).length + ' reads, ' + (main.match(/safeLink\(gv\('f_link'\)\)/g) || []).length + ' through safeLink');
+  // ---- Rev 55: a stale pending copy does not survive a boot that adopts canonical
+  {
+    const h = build();
+    h.run(`OMS_SET_STATE=(s,c,d)=>{globalThis.__b=s;globalThis.__d=d||''};localStorage.setItem(OMS_PENDING_KEY, JSON.stringify({state:{},revision:70,error:'Canonical confirmation is still pending',savedAt:'2026-09-07T02:35:25.982Z',reached:true}));sessionStorage.setItem('cao_oms_session','t');sessionStorage.setItem('cao_oms_user','{}');`);
+    const p = h.run(`OMS_BOOT()`); await h.advance(200); try { await p; } catch (_) {}
+    ok('Rev 55: a pending copy whose operations had reached the gateway is cleared at boot', h.run(`localStorage.getItem(OMS_PENDING_KEY)`) === null);
+    ok('Rev 55: ...quietly', !/never reached/.test(h.run(`globalThis.__d||''`)), h.run(`globalThis.__d`));
+    ok('Rev 55: ...so the close prompt no longer fires', h.run(`OMS_SYNC_PENDING()`) === false);
+    const h2 = build();
+    h2.run(`OMS_SET_STATE=(s,c,d)=>{globalThis.__b=s;globalThis.__d=d||''};localStorage.setItem(OMS_PENDING_KEY, JSON.stringify({state:{},revision:70,error:'offline',savedAt:'2026-09-07T02:35:25.982Z',reached:false}));sessionStorage.setItem('cao_oms_session','t');sessionStorage.setItem('cao_oms_user','{}');`);
+    const p2 = h2.run(`OMS_BOOT()`); await h2.advance(200); try { await p2; } catch (_) {}
+    ok('Rev 55: a pending copy that never reached the gateway is cleared too', h2.run(`localStorage.getItem(OMS_PENDING_KEY)`) === null);
+    ok('Rev 55: ...and the banner says the work was not restored, with its time', /never reached shared OMS/.test(h2.run(`globalThis.__d||''`)) && /2026/.test(h2.run(`globalThis.__d||''`)), h2.run(`globalThis.__d`));
+    ok('Rev 55: the pending copy records whether the batch reached the gateway', /reached:!!OMS_INFLIGHT/.test(main));
+    // Found live: Create sign-in for an existing person ran as a password reset because openModal replaced MC and lost the mode.
+    const h3 = build();
+    h3.run(`ST.people=[{id:'p1',name:'Test Person',email:'t@x.org',active:true}];openAccountModal('create','p1');`);
+    ok('Rev 55: opening the account dialog in create mode keeps the mode through openModal', h3.run(`MC.type==='acct'&&MC.mode==='create'`), h3.run(`JSON.stringify(MC)`));
+    h3.run(`openAccountModal('reset','p1');`);
+    ok('Rev 55: ...and reset mode likewise', h3.run(`MC.mode==='reset'`));
+    h3.run(`openTaskModal();`);
+    ok('Rev 55: a different dialog does not inherit a stale mode', h3.run(`MC.mode===undefined`), h3.run(`JSON.stringify(MC)`));
+  }
+
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();
   h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);

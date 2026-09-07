@@ -723,5 +723,11 @@
       "abSec"
     ],
     "why": "A-08. A control on a card nobody renders is the Rev 34 shape all over again; the delete must be inside abSec, which is what draws all four sections."
+  },
+  {
+    "id": "rev55-lost-pending-work-is-named",
+    "text": "the banner says so, with the time of the work that was lost",
+    "requires_code": "never reached shared OMS before the page was reloaded",
+    "why": "Rev 55 (S-6). A pending copy written by a failed sync survived every later boot; a Connected page kept asking Leave site? for work that had landed, and work that had NOT landed was discarded on reload with nothing said. The guide now describes the banner; this binds it."
   }
 ]
