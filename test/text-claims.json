@@ -755,7 +755,7 @@
   {
     "id": "rev57-outside-period-rows-are-counted",
     "code": "_importOutside++",
-    "requires_text": "outside the period you gave",
+    "requires_text": "because they fell outside the period you gave",
     "reachable_from": [
       "parseKeyDatesSheet"
     ],

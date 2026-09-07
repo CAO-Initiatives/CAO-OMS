@@ -2588,6 +2588,8 @@ console.log('\n# Workbook importer (Rev 53)');
   if (typeof baseYear === 'function') {
     ok('B-05: the year comes from the sheet name', baseYear('2028 Key Dates', []) === 2028);
     ok('B-05: or from the first few cells', baseYear('Key Dates', [['', 'Planning calendar 2029']]) === 2029);
+    ok('Rev 58: a date lead deeper in the sheet does not become the year', baseYear('Key Dates', [['Key Dates Calendar'], ['January', 'February'], ['Q1'], ['3/19\nState of the School'], [''], ['1/11/2027 (confirm)\nState of the School']]) === 0);
+    ok('Rev 58: a date expression in the header rows is not a year either', baseYear('Key Dates', [['Planning 1/1/2027 - 12/31/2027']]) === 0);
     ok('B-05/Rev 57: a sheet stating no year returns 0, and the parser hands the question back instead of refusing',
        baseYear('Key Dates', [['Q1', 'Q2']]) === 0 && /if\(!range\|\|!range\.start\|\|!range\.end\)return null/.test(String(G('parseKeyDatesSheet') || '')));
     ok('Rev 57: the import path asks for the period when the parser hands back null', /parsed===null\)\{_importPendingKD=\{sheet,name:wb\.SheetNames\[0\]\};showKeyDatesRangePicker\(/.test(main));
