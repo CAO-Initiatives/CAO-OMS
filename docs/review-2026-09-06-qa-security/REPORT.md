@@ -244,6 +244,24 @@ Not run, deliberately: anything resembling brute force against sign-in (no rate 
 
 Total events 255 to 275; the three Standing events and the seven third-source events untouched; no task carried a source-event link at the time, so nothing could be orphaned. The consolidator absorbed the 123-commit burst without a failed run.
 
+### 12.3 Architecture improvements implemented on 7 September (authorized: "implement architecture improvements if you can ensure system stability and reliability")
+
+Three coordinated changes, landed in dependency order and each verified live before the next. Every step is backward compatible: an older client keeps working against the new gateway, a single-operation inbox file is still consolidated exactly as before, and a client on the new artifact falls back to the old behavior against a gateway that lacks the new endpoints.
+
+| Change | Where | What it fixes | Verified |
+|---|---|---|---|
+| Batch inbox files (OPS-040) | `CAO-OMS-Data` PR #17, main `8a8281d` | One file may carry several operations under a small envelope (`schemaVersion`, `batchId`, `actor`, `createdAt`, `operations`). Every member is validated before any is applied; a malformed member refuses the whole file. Single files unchanged. New `scripts/test_consolidate.py` (34 checks) runs in the canonical gate. | Gate green; live batch of 2 creates and batch of 2 deletes both applied, per-member and batch stamps present. |
+| Snapshot retention applied automatically (FAB-10) | same PR | `prune_snapshots.py --apply` runs in the consolidator commit that adds a snapshot pair. | First run pruned 203 files to 177. |
+| Runner Python | same PR | The consolidator no longer installs Python; the runner's own `python3` is used. | Run completed; ~10 s save-to-confirm. |
+| Batch endpoint (OMS-064) | `CAO-OMS-Gateway` PR #21, main `e156ecc` | `POST /api/operation` accepts `{operations:[...]}`: one PUT, one commit, one run per save instead of one per record. Cap 100 members, 10x the single-record byte cap; 403/401 semantics unchanged. | `test-batch-and-revision.mjs` 27/0; live commit `OMS batch: 2 operation(s) on tasks`. |
+| Revision endpoint (D-12) | same PR | `GET /api/revision` serves `stateRevision`, `status`, `updatedAt`, `lastOperationId` from the manifest. `manifest.status` had never reached a client. | Live: `{revision:101,status:"ready"}`. |
+| Bounded fail-open (D-10) | same PR | The stale account list is trusted for 15 minutes after `auth/users.json` becomes unreadable; beyond that reads still fail open but writes and account changes are refused with 503 `auth_unavailable`. `/api/me` serializes only the public account shape. | `test-auth-fallback-bound.mjs` 12/0 with a controlled clock; revocation suite still 55/0. |
+| Client Rev 60 (v1.43.0) | `CAO-OMS` `cb61e5b`, sha `477ae25d…` | `OMS_POST_BATCH` sends the whole save when there is more than one operation and remembers a 400 on the envelope as "old gateway"; `OMS_PEEK_REVISION` runs before every state fetch in the wait, the reconciler and the idle watch; `OMS_CONN_HINT` puts a non-ready canonical status into the Connected banner; `.mft` is sticky (OMS-060). | Smoke 919/0 (19 new cases), text claims 106/0, negative gates green, `verify_live` MATCHES; live save Connected at revision 102, deletes at 103, no conflict records. |
+
+What was measured on the live save: a two-record create was one gateway request, one inbox commit and one consolidator run, confirmed in about ten seconds; the client read the state twice (pre-flight version check and confirmation) where Rev 59 would have read it on every poll.
+
+Not done, and why: dispatching the consolidator from the gateway was dropped because the push trigger on the inbox branch already starts a run within seconds; there is nothing to dispatch. Rate limiting and CSP (FAB-08, FAB-09) remain open as before.
+
 ## 13. Why four items were left alone on day one, and what changed
 
 - **The scheduled consolidator drain.** It is GitHub's scheduler, not this system's code; DEC-019 already records that it does not fire reliably and asks what to do about it. OPS-039 made it a backstop rather than the recovery path: any later push now drains the inbox, and a manual dispatch works in seconds. Still open as a question of whether to rely on the schedule at all; the honest options are to accept it as-is, or to have the gateway dispatch the workflow after each accepted operation, which needs the GitHub App to hold the Actions permission and is a gateway PR.
