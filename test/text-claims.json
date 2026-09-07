@@ -729,5 +729,11 @@
     "text": "the banner says so, with the time of the work that was lost",
     "requires_code": "never reached shared OMS before the page was reloaded",
     "why": "Rev 55 (S-6). A pending copy written by a failed sync survived every later boot; a Connected page kept asking Leave site? for work that had landed, and work that had NOT landed was discarded on reload with nothing said. The guide now describes the banner; this binds it."
+  },
+  {
+    "id": "rev56-admin-controls-re-resolve-after-the-gateway",
+    "text": "lands on the record as it stands when the answer arrives",
+    "requires_code": "const p2=ST.people.find(x=>x.id===id)||p",
+    "why": "Rev 56. Reactivate restored the account and lost the directory flag because a confirming sync replaced ST during the await and the flag was set on an orphaned record. The guide now says the change lands on the record as it stands; this binds it to the re-resolution."
   }
 ]

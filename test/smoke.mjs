@@ -1896,6 +1896,25 @@ const E = id => ctx.document.getElementById(id);
       const ck = G('OMS_CHANGED_KEYS')({ id: 't1', title: 'a' }, { id: 't1', title: 'a', category: 'X' });
       ok('Rev 52: ...seen at the seam', ck.keys.join() === 'category' && ck.base.category === null && ck.changes.category === 'X', JSON.stringify(ck));
     }
+
+    // ---- Rev 56 (found live): a confirming sync replaced ST while the gateway call was in flight.
+    {
+      const dea = G('adminDeactivate'), act = G('adminActivate');
+      T.fn(`OMS_ACCOUNTS=[{id:'jane.westgate@advocatehealth.org',role:'editor',disabled:false}]`);
+      T.st.people = [{ id: 'jane-westgate', name: 'Jane Westgate', email: 'jane.westgate@advocatehealth.org', role: 'PM', accessRole: 'editor', active: true }];
+      // The stub does what OMS_REBASE_LOCAL does at confirmation: ST becomes a fresh copy.
+      ctx.omsAccountAction = async () => { T.fn(`ST=JSON.parse(JSON.stringify(ST))`); return { ok: true }; };
+      await dea('jane-westgate');
+      ok('Rev 56: deactivate lands on the record ST holds after the await', T.st.people[0].active === false);
+      T.fn(`OMS_ACCOUNTS[0].disabled=true`);
+      await act('jane-westgate');
+      ok('Rev 56: reactivate lands on the record ST holds after the await', T.st.people[0].active === true);
+      T.fn(`OMS_ACCOUNTS[0].disabled=false`);
+      fill('Jane Westgate', 'jane.westgate@advocatehealth.org', '', false); FIELDS['au_access'] = 'viewer';
+      await saveUser('jane-westgate');
+      ok('Rev 56: an access-level change lands on the record ST holds after the await', T.st.people[0].accessRole === 'viewer');
+      ctx.omsAccountAction = realAction;
+    }
     ctx.omsAccountAction = realAction; ctx.save = realSave;
     ctx.closeModal = realClose; ctx.rAdmin = realR;
     Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0;
