@@ -924,5 +924,62 @@
     ],
     "symbol": "omsSavePrefs",
     "why": "Rev 61. Remembering must happen on a tab change, not only when a filter is touched."
+  },
+  {
+    "id": "rev62-mine-owner-filter",
+    "text": "so the number and the list agree",
+    "requires_code": "if(taskOw===OMS_MINE_OWNER)f=omsOwnedByMe(f);",
+    "why": "Rev 62. The guide promises the counter and the list it opens are computed the same way; this is the line in omsTaskRows that makes it so."
+  },
+  {
+    "id": "rev62-mine-reachable",
+    "code": "function omsOwnedByMe",
+    "requires_text": "Mine (owned by you)",
+    "reachable_from": [
+      "omsTaskRows",
+      "omsMineOnly"
+    ],
+    "symbol": "omsOwnedByMe",
+    "why": "Rev 62. One resolver behind the Dashboard counter, the Tasks filter and the option in the Owner list; orphan it anywhere and the two disagree again."
+  },
+  {
+    "id": "rev62-counter-sends-mine",
+    "code": "function omsShowTasks",
+    "requires_text": "Pressing a counter with Mine on opens the task list",
+    "reachable_from": [
+      "omsShowTasks"
+    ],
+    "symbol": "OMS_MINE_OWNER",
+    "why": "Rev 62. The counter must hand the Tasks screen the resolved filter, not a display name."
+  },
+  {
+    "id": "rev62-mine-not-lists",
+    "text": "the cards below are office-wide",
+    "forbids_code": "The counters and the lists below",
+    "why": "Rev 62. The Rev 61 tooltip said the cards narrow with Mine; nothing below the counters is scoped, and the old sentence must not come back."
+  },
+  {
+    "id": "rev62-copy-saved-at-once",
+    "text": "Cancel on the dialog does not remove it",
+    "requires_code": "list.push(copy);\n  OMS_EDIT_SEQ++;_dirty.add(coll);OMS_QUEUE_SYNC();",
+    "why": "Rev 62. The guide now says the copy is saved before the dialog opens; that is the order of these two lines in omsDuplicate. Reorder them and the sentence is wrong."
+  },
+  {
+    "id": "rev62-five-counters-collapse",
+    "text": "Due in 3 Days",
+    "requires_code": ".g2,.g3,.g4,.g5,.cal-grid{grid-template-columns:1fr}",
+    "why": "Rev 62. The five-counter row collapses with the other grids on a phone; Rev 61 set its width inline, which beat the breakpoint."
+  },
+  {
+    "id": "rev62-mine-option-offered",
+    "code": "const OMS_MINE_OWNER=",
+    "requires_text": "Mine (owned by you)",
+    "reachable_from": [
+      "rTasks",
+      "omsShowTasks",
+      "omsTaskRows"
+    ],
+    "symbol": "OMS_MINE_OWNER",
+    "why": "Rev 62. The Owner list must offer the resolved value, the counter must send it, and the row filter must honor it."
   }
 ]

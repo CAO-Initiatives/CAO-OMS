@@ -2781,6 +2781,40 @@ console.log('\n# Rev 61: acting on many rows, copying one, and coming back to wh
 ok('Rev 61: the counters are real buttons, not clickable divs',
    /<button type="button" class="kpi r klk"/.test(html) && /<button type="button" class="kpi y klk"/.test(html));
 ok('Rev 61: the bulk bar is hidden from print', /class="bulkbar no-print"/.test(html));
+
+// ---- Rev 62: what the Rev 61 review found.
+console.log('\n# Rev 62: the Mine counter and the list it opens agree; the row of five collapses; Copy says what it does');
+{
+  T.fn("ST.people=[{id:'hossam-elsaie',name:'Hossam Elsaie',email:'hossam.elsaie@advocatehealth.org',active:true}," +
+       "{id:'maggie-scirica',name:'Maggie Scirica',email:'Margaret.Scirica@Advocatehealth.org',active:true}]");
+  // Live canonical (revision 103) holds both 'Hossam Elsaie' and 'Hossam' as owner strings.
+  T.fn("ST.tasks=[{id:'m1',title:'Long form',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-01'}," +
+       "{id:'m2',title:'Short form',owner:'Hossam',status:'Not Started',due:'2030-01-01'}," +
+       "{id:'m3',title:'Somebody else',owner:'Maggie',status:'Not Started',due:'2030-01-01'}]");
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'};dashMine=true;taskSt='All';taskOw='All';taskCat='All';taskQ=''");
+  const counted = G('omsMineOnly')(T.st.tasks).length;
+  ok('Rev 62: the Dashboard counter resolves both spellings to the signed-in person', counted === 2, counted + ' counted');
+  T.fn("omsShowTasks('All')");
+  ok('Rev 62: the counter sends the Tasks screen the resolved Mine filter, not a display name',
+     T.fn('taskOw') === T.fn('OMS_MINE_OWNER'), T.fn('taskOw'));
+  const listed = G('omsTaskRows')().length;
+  ok('Rev 62: ...and the list shows exactly what was counted', listed === counted, listed + ' listed vs ' + counted + ' counted');
+  T.fn("taskOw='Hossam Elsaie'");
+  ok('Rev 62: a plain owner string still filters by string, as before',
+     G('omsTaskRows')().length === 1, G('omsTaskRows')().length + ' rows');
+  T.fn("taskOw=OMS_MINE_OWNER;dashMine=false");
+  ok('Rev 62: the Tasks Mine filter does not depend on the Dashboard chip',
+     G('omsTaskRows')().length === 2, G('omsTaskRows')().length + ' rows');
+  T.fn("taskOw='All';taskSel.clear();_dirty.clear();ST.people=[]");
+}
+ok('Rev 62: the five counters use a class, not an inline width', /<div class="g5" style="margin-bottom:14px">/.test(html)
+   && !/class="g4" style="grid-template-columns:repeat\(5,1fr\)/.test(html));
+ok('Rev 62: ...and that class collapses at both breakpoints with the other grids',
+   /@media\(max-width:900px\)\{\.g2,\.g3,\.g4,\.g5,\.cal-grid\{grid-template-columns:1fr 1fr\}/.test(html)
+   && /@media\(max-width:600px\)\{\.g2,\.g3,\.g4,\.g5,\.cal-grid\{grid-template-columns:1fr\}/.test(html));
+ok('Rev 62: the Mine tooltip no longer claims the cards below narrow', !/The counters and the lists below/.test(html));
+ok('Rev 62: the Copy control says the copy is saved at once', /is saved to shared OMS at once/.test(html)
+   && !/opens for editing\. Nothing is sent\./.test(html));
   {
     const h = build();
     h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
