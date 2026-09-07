@@ -198,3 +198,55 @@ Verified in canonical at revision 93: no task, SOP, person, notification or hist
 
 - `repro-sync-path.mjs`: five reproductions against `oms.html`; all pass at Rev 54 and later, each failed at the revision it names.
 - `REPORT.md`: this document.
+
+---
+
+## 12. Day two, 7 September 2026: Hossam's decisions and the remaining lanes
+
+Hossam's instructions on the morning of 7 Sept, and what happened with each.
+
+| Instruction | Outcome |
+|---|---|
+| Delete `OMS_USERS_JSON` from Vercel if there is no risk | Verified first that the gateway had written six account operations to `auth/users.json` on `main` in the previous hour, so the file is authoritative and the seed is unreached. Deleted from Production and Preview; redeployed; `/api/me` answers 200 on the new deployment. A missing auth file now fails loudly instead of reverting the roster to the seed (DEC-030). |
+| Key Dates: ask for a date range when the year cannot be established | Rev 57: two calendar pickers appear in place of the refusal; dates are read into the period; out-of-period rows are dropped and counted; periods over two years refused. Live on a year-less copy of the real sample: picker shown, 89 rows for Jan 2026 to Mar 2027, 30 rows and 59 counted outside for Jan to Jun 2026. Rev 58 fixed the year scan the live test exposed: it had read six rows and taken `/2027` out of a date lead as the sheet's year, so the picker never appeared on the first try. |
+| Admin password resets end live sessions | Confirmed as DEC-029; already shipped in OMS-063. |
+| Why were four items left alone | Answered in §13 below; three of the four are now fixed in Rev 57. |
+| Correct `REV17.md` | Both sentences corrected in Rev 57 with the date and the decisions that replaced the promise. |
+| Update and validate the canonical backlog | `CAO_OMS_Canonical_Backlog_CURRENT_20260907.xlsx` written from the 20260906 file: FAB-11 to FAB-38 added, seven earlier closed FAB rows given the Verified Against they lacked, thirteen QA Checklist rows re-marked with a Verified Against column and ten new cases added, DEC-027 to DEC-030 logged, a Session Log sheet for the day, Source Register and Release Crosswalk rows, README note. Validation pass: no duplicate ids, every status in the dropdown list, every closed FAB row carries Verified Against, and the source workbook held no data validations or formulas, so none were lost. |
+| Delete the superseded drafts | The Rev 8 handoff draft is discarded (Drafts 45 to 44). The Rev 9 handoff and the Rev 8 backlog drafts, and the recipient for the Dean briefing draft, are blocked on a browser limitation: Outlook does not render its message list, or the Discard dialog, while its tab is hidden, and the tool cannot bring the Chrome window to the front. Needs the Outlook tab visible; two minutes of work once it is. |
+| Test the viewer role | No viewer account exists. `auth/users.json` holds one admin and five editors; Jane Westgate and Clare Il'Giovine are directory people without sign-ins (OMS-056 deliberately left them so). A throwaway viewer account can be created from the console for the test; the sign-in itself has to be typed by Hossam. |
+| Finish the gates | Gate 5 Test 3 (outage), Test 4 (recovery) and Test 5 (integrity) run live and passed; Tests 1 and 2 were covered by the concurrent-edit cases. Gate 6 is the five-person pilot and cannot be run by one reviewer. |
+| Import the real workbooks after the new importer | Events: preview on Rev 58 showed 181 rows, all 181 matching an existing Ari event so every id is kept, 180 selected after one in-workbook duplicate, one unreadable date reported; replacement confirmed and its update operations posted (result recorded below). Key Dates: previewed; see below. |
+
+### 12.1 Security probes run against the deployed gateway (safe, single requests)
+
+| Probe | Result |
+|---|---|
+| `/api/state` with no token, and with a garbage token | 401 both |
+| Nested credential-shaped key two levels down | 400 `credential_field_refused`, path named |
+| `__proto__` as a field name | 400 `unsafe_key_refused` |
+| A single value over the string cap | 400 `payload_too_large` |
+| Unknown collection | 400 `Invalid entityType` |
+| Cross-origin fetch from github.com to state and login | Blocked by CORS |
+| Login with an unknown id vs a known id and wrong password | Same body (`invalid_credentials`); timing indistinguishable after the first cold request |
+| Role action for an unknown account, as admin | 404 `Account not found` |
+
+Not run, deliberately: anything resembling brute force against sign-in (no rate limiting exists; hammering the Dean's Office gateway to prove that is not a test worth running), and anything that would need a second real person's credentials.
+
+## 13. Why four items were left alone on day one, and what changed
+
+- **The scheduled consolidator drain.** It is GitHub's scheduler, not this system's code; DEC-019 already records that it does not fire reliably and asks what to do about it. OPS-039 made it a backstop rather than the recovery path: any later push now drains the inbox, and a manual dispatch works in seconds. Still open as a question of whether to rely on the schedule at all; the honest options are to accept it as-is, or to have the gateway dispatch the workflow after each accepted operation, which needs the GitHub App to hold the Actions permission and is a gateway PR.
+- **Intake sections had Delete but no Edit.** Left because the fix agent was told the edit dialogs were out of its scope and I wanted the delete to ship rather than wait. Built in Rev 57.
+- **`buildSeed` and the seed arrays.** Left because deleting them changes what an empty canonical shows, and that is a decision about the bootstrap, not a defect. Decided and removed in Rev 57: canonical is the only source of records.
+- **`seedPeople` listed a departed colleague.** Left because it runs only when canonical has no people at all, and correcting a roster needs the right roster. Decided in Rev 57: the bootstrap roster is the one administrator.
+
+## 14. Screen reader, keyboard-only, and mobile tests: what they would be
+
+Described so you can decide whether to run or waive them.
+
+- **Keyboard-only.** Unplug the mouse. Tab through the header, the tab bar and each screen; every filter chip and calendar pill must take focus and act on Enter or Space (Rev 54 made them focusable buttons); open a dialog and confirm focus moves into it, Escape closes it, and focus returns to the control that opened it; complete an add-task flow end to end without the mouse. Pass if nothing is unreachable and nothing traps focus.
+- **Screen reader.** With Windows Narrator or NVDA: every form field announces its label (Rev 54 associated them); the dialog announces as a dialog with its title; status badges are read as words, not colors; the sync state changes are announced or at least readable on demand. Pass if a person who cannot see the screen can add a task and tell whether it saved.
+- **Mobile and responsive.** At 375 px and 768 px widths: the tab bar scrolls horizontally rather than wrapping off-screen (it is styled to), the calendar grid collapses to fewer columns (the print and 900/600 px breakpoints exist), dialogs fit the viewport and their footer stays reachable, and text inputs are not zoomed by the browser on focus. The app has never been designed for phones; the realistic expectation is "readable and operable on a tablet", not "phone-first".
+
+None of these has been run. Nothing in the review depends on them.
+
