@@ -3032,6 +3032,28 @@ console.log('\n# Rev 68: out of office is ordinary, Standing is Recurring, categ
   T.fn("const __x=JSON.parse(globalThis.__s68);ST.events=__x.e;ST.tasks=__x.t;ST.sops=__x.s;_dirty.clear()");
   ALERTS.length = 0;
 }
+// Rev 69. Rev 68 claimed one word and left three strings a user can actually
+// read still saying "standing": the Cadence line on an export's About sheet,
+// the import preview's Mark/Not toggle buttons, and one guide sentence. The
+// internal token calCadence==='standing' and the importer's title-word regex
+// are deliberately unchanged and are not user-facing.
+// Scoped to strings a user can actually read. Two CODE COMMENTS legitimately
+// discuss "a standing series" and "not a standing meeting" while explaining the
+// importer's title rule, and a blanket search flags those, so the check names
+// the surfaces instead: the preview's toggle buttons and the export's Cadence line.
+// Outside OMS_REV_LOG, which is append-only history and legitimately quotes the
+// very strings this removed - the Rev 69 release note names all three, and an
+// unscoped check therefore fails on its own changelog the moment it ships.
+const _lg = html.indexOf('const OMS_REV_LOG=[');
+const outsideLog = _lg < 0 ? html : html.slice(0, _lg) + html.slice(html.indexOf('\n];', _lg));
+ok('Rev 69: no control or export still says standing',
+   !/Mark standing/.test(outsideLog) && !/Not standing/.test(outsideLog)
+   && !/'standing only'/.test(outsideLog));
+ok('Rev 69: ...and the guide sentence about an annual gala says recurring',
+   /not a recurring meeting\.<\/li>/.test(html) || /one-off, not a recurring meeting/.test(html));
+ok('Rev 69: ...while the internal filter token and the importer word list are untouched',
+   /calCadence==='standing'/.test(main) && /standing\|recurring/.test(main));
+
 ok('Rev 68: the Categories dialog offers Add and Delete, and says what each does',
    /id="cat_new"/.test(html) && /onclick="omsAddCategory\(\)"/.test(html)
    && /onclick="omsDeleteCategory\(\$\{i\}\)"/.test(html)
