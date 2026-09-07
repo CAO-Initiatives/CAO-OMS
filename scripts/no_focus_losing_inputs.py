@@ -231,8 +231,14 @@ def main():
     renderers = {}
     for name, (a, b) in spans.items():
         body = html[a:b]
+        # innerHTML= is how every renderer in this artifact replaces a
+        # container, but it is not the only way to destroy a child element, and
+        # a guard that knows only today's idiom is a guard with an expiry date.
         if re.search(r"getElementById\(\s*['\"][A-Za-z0-9_-]+['\"]\s*\)\s*\.innerHTML\s*=", body) \
-           or re.search(r"\.outerHTML\s*=", body):
+           or re.search(r"\.outerHTML\s*=", body) \
+           or re.search(r"\.replaceChildren\s*\(", body) \
+           or re.search(r"\.insertAdjacentHTML\s*\(", body) \
+           or re.search(r"\.removeChild\s*\(", body):
             renderers[name] = (a, b)
 
     helper_defined = ("function %s(" % HELPER) in html

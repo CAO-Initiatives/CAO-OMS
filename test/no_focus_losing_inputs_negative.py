@@ -135,6 +135,16 @@ check("the helper missing from the artifact is caught", True,
 check("a renderer passed by reference, not called, is still caught", True,
       artifact('<input class="srch" id="s" oninput="q=this.value;setTimeout(rThing,0)">'))
 
+# 11. A renderer that rebuilds its container by a route other than innerHTML.
+#     Every renderer in the artifact uses innerHTML today; a guard that knows
+#     only today's idiom expires the first time somebody writes modern DOM code.
+check("a renderer using replaceChildren instead of innerHTML is still caught", True,
+      ("<!doctype html><html><body><div id=\"thing\"></div><script>\n"
+       "function rThing(){ const d=document.createElement('div');"
+       "d.innerHTML=`<input class=\"srch\" id=\"s\" oninput=\"q=this.value;rThing()\">`;"
+       "document.getElementById('thing').replaceChildren(d); }\n"
+       + HELPER + "\n</script></body></html>"))
+
 print("\n# Sound artifacts that must NOT be caught")
 
 # 11. The correct shape: the helper, with this control's own id.
