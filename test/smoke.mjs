@@ -2865,6 +2865,10 @@ console.log('\n# Rev 63: every grid exports what it shows, and the Key Dates per
   ok('Rev 63: the Key Dates period has no upper limit', !/months>24/.test(main) && /omsApplyKeyDatesRange/.test(main));
   T.fn("const __s=JSON.parse(globalThis.__snap);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.rob=__s.r;OMS_REVISION=__s.rev;ST.people=[];_dirty.clear();taskSel.clear()");
 }
+ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phone neither scrolls sideways nor zooms on focus',
+   /@media\(max-width:600px\)\{header\{flex-wrap:wrap[^}]*\}\.hr\{flex-wrap:wrap\}/.test(html)
+   && /#mbody input,#mbody select,#mbody textarea\{font-size:16px\}/.test(html));
+ok('Rev 64: the phone rule does not touch the desktop header', /header\{background:var\(--nv\);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky/.test(html));
 ok('Rev 63: five Export buttons, one per grid',
    (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length === 5,
    (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length + ' found');

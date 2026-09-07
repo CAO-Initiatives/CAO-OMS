@@ -1081,5 +1081,17 @@
     "text": "as long as the sheet needs",
     "forbids_code": "months>24",
     "why": "Rev 63. Hossam removed the two-year limit on the Key Dates period on 7 Sept 2026; the guide says there is none, so the refusal must not come back."
+  },
+  {
+    "id": "rev64-phone-header-wraps",
+    "text": "the header wraps instead of running off the edge",
+    "requires_code": "@media(max-width:600px){header{flex-wrap:wrap",
+    "why": "Rev 64. At 375 px the header ran 245 px past the viewport and the page scrolled sideways; the guide promise is this one rule."
+  },
+  {
+    "id": "rev64-phone-no-zoom",
+    "text": "form fields are sized so the phone does not zoom in when you tap one",
+    "requires_code": "#mbody input,#mbody select,#mbody textarea{font-size:16px}",
+    "why": "Rev 64. Mobile Safari zooms into any field under 16 px; the dialog fields were 12 px."
   }
 ]
