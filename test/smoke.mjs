@@ -2516,6 +2516,23 @@ console.log('\n# The reconciler, executed (Rev 36)');
     ok('Rev 55: a different dialog does not inherit a stale mode', h3.run(`MC.mode===undefined`), h3.run(`JSON.stringify(MC)`));
   }
 
+  // ---- Rev 59 (FAB-39): a refusal nothing can cure leaves no pending copy behind
+  for (const [flag, label] of [['readOnly', 'Read only'], ['mustChange', 'Password change required']]) {
+    const h = build();
+    h.run(`OMS_POST=async()=>{throw Object.assign(new Error('refused'),{${flag}:true,status:403})};`);
+    h.run(`ST.tasks[0].title='Typed by somebody who cannot save';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`); await h.advance(3000); try { await p; } catch (_) {}
+    ok('Rev 59: a ' + flag + ' refusal shows its banner', h.run(`globalThis.__b`) === label, h.run(`globalThis.__b`));
+    ok('Rev 59: ...and arms no pending copy', h.run(`localStorage.getItem(OMS_PENDING_KEY)`) === null);
+    ok('Rev 59: ...so the close prompt stays quiet', h.run(`OMS_SYNC_PENDING()`) === false);
+  }
+  {
+    const h = build();
+    h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`); await h.advance(3000); try { await p; } catch (_) {}
+    ok('Rev 59: an ordinary failure still arms the pending copy', h.run(`localStorage.getItem(OMS_PENDING_KEY)`) !== null);
+  }
+
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();
   h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);

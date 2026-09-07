@@ -780,5 +780,11 @@
       "saveModal"
     ],
     "why": "Rev 57. The save has to merge over the existing row; a rebuild would be the Rev 14 replace-not-merge defect again."
+  },
+  {
+    "id": "rev59-uncurable-refusal-leaves-nothing-pending",
+    "text": "leaves nothing pending: there is no prompt on leaving the page",
+    "requires_code": "if(!(e.readOnly||e.mustChange)){try{localStorage.setItem(OMS_PENDING_KEY",
+    "why": "Rev 59 (FAB-39). A read-only refusal armed the pending copy and the Leave site? prompt for work that could never be saved. The guide now says such a refusal leaves nothing pending; this binds it to the branch."
   }
 ]
