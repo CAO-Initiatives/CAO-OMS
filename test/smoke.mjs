@@ -1720,12 +1720,14 @@ const E = id => ctx.document.getElementById(id);
     E('au_pw').dataset = {};
     FIELDS['au_name'] = 'Clare Il’Giovine';
     syncPw();
-    ok('the password fills in from the name', FIELDS['au_pw'] === suggest('Clare Il’Giovine'));
+    ok('the password fills in from the name', /^Ilgiovine-\d{6}-OMS!$/.test(FIELDS['au_pw'] || ''), FIELDS['au_pw']);
     ok('and it carries no punctuation that cannot be dictated',
-       /^[A-Za-z]+-OMS-2026!$/.test(FIELDS['au_pw'] || ''));
+       /^[A-Za-z]+-\d{6}-OMS!$/.test(FIELDS['au_pw'] || ''));
+    const randPart = (FIELDS['au_pw'] || '').split('-')[1];
     FIELDS['au_name'] = 'Jane Westgate';
     syncPw();
-    ok('it keeps following the name while untouched', FIELDS['au_pw'] === suggest('Jane Westgate'));
+    ok('it keeps following the name while untouched', FIELDS['au_pw'] === 'Westgate-' + randPart + '-OMS!', FIELDS['au_pw']);
+    ok('Rev 51: the random part is kept for the life of the dialog, so what the admin reads out is what was set', (FIELDS['au_pw'] || '').split('-')[1] === randPart);
     E('au_pw').dataset.touched = '1';
     FIELDS['au_name'] = 'Somebody Else';
     syncPw();
@@ -1822,19 +1824,40 @@ if (typeof suggest === 'function') {
   // Must agree with lastNameOf in the gateway's make-users.mjs. If these two
   // drift, the same person gets a different password depending on which route
   // issued it - which is the failure this release exists to prevent.
+  // Rev 51 (E-01): the suffix is no longer fixed. The surname part must still be
+  // dictatable and the middle part must be six random digits, so a name no longer
+  // determines a password. The fixed '-OMS-2026!' shape must not come back.
   const cases = [
-    ["Clare Il'Giovine",   'Ilgiovine-OMS-2026!'],
-    ["Anne-Marie O'Brien", 'Obrien-OMS-2026!'],
-    ['Hossam Elsaie',      'Elsaie-OMS-2026!'],
-    ['Maggie Scirica',     'Scirica-OMS-2026!'],
-    ['Jane Westgate',      'Westgate-OMS-2026!'],
-    ['Ari Ball',           'Ball-OMS-2026!'],
+    ["Clare Il'Giovine",   'Ilgiovine'],
+    ["Anne-Marie O'Brien", 'Obrien'],
+    ['Hossam Elsaie',      'Elsaie'],
+    ['Maggie Scirica',     'Scirica'],
+    ['Jane Westgate',      'Westgate'],
+    ['Ari Ball',           'Ball'],
   ];
   for (const [name, expected] of cases)
-    ok(`${name} yields ${expected}`, suggest(name) === expected, suggest(name));
+    ok(`${name} yields ${expected}-dddddd-OMS!`, new RegExp('^' + expected + '-\\d{6}-OMS!$').test(suggest(name)), suggest(name));
   ok('no apostrophe survives into a password', !/'/.test(suggest("Clare Il'Giovine")));
-  ok('a single name still works', suggest('Cher') === 'Cher-OMS-2026!');
-  ok('an empty name degrades rather than throwing', suggest('') === 'User-OMS-2026!');
+  ok('a single name still works', /^Cher-\d{6}-OMS!$/.test(suggest('Cher')));
+  ok('an empty name degrades rather than throwing', /^User-\d{6}-OMS!$/.test(suggest('')));
+  // The sandbox's getRandomValues is an identity stub; give it real entropy for this check.
+  ctx.crypto.getRandomValues = a => { for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 4294967296); return a; };
+  ok('Rev 51: two suggestions for the same name differ', suggest('Ari Ball') !== suggest('Ari Ball') || suggest('Ari Ball') !== suggest('Ari Ball'));
+  ok('Rev 51: the published fixed suffix is gone from the generator', !/OMS-2026!/.test(String(suggest)));
+  ok('Rev 51: esc() escapes all five characters', G('esc')('<a href="x" title=\'y\'>&') === '&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;&amp;');
+  ok('Rev 51: esc() does not throw on a number', G('esc')(3400) === '3400');
+  ok('Rev 51: safeUrl refuses a script scheme and keeps web and mail links',
+     G('safeUrl')('javascript:1') === '' && G('safeUrl')('https://a.b/c') === 'https://a.b/c' && G('safeUrl')('mailto:x@y.z') === 'mailto:x@y.z' && G('safeUrl')('data:text/html,x') === '');
+  ok('Rev 51: safeLink prefixes a bare host with https', G('safeLink')('example.org/p') === 'https://example.org/p');
+  ok('Rev 51: decodeHtmlEntities uses no DOM and decodes the entities the app emits',
+     G('decodeHtmlEntities')('a &amp; b &lt;c&gt; &quot;d&quot; &#39;e&#39; &mdash; &#x41;&#66; &bogus;') === 'a & b <c> "d" \'e\' \u2014 AB &bogus;');
+  ok('Rev 51: every link anchor goes through safeUrl', (html.match(/href="\$\{esc\(safeUrl\([a-z]\.link\)\)\}"/g) || []).length === 13 && !/href="\$\{esc\([a-z]\.link\)\}"/.test(html));
+  ok('Rev 51: sign-out clears the local copy of shared state', /function OMS_SIGN_OUT\(\)[\s\S]{0,600}?localStorage\.removeItem\(OMS_LOCAL_KEY\)/.test(main));
+  ok('Rev 51: the unread second copy of state is no longer written', !/localStorage\.setItem\('cao_oms_v132_startup_fixed'/.test(main));
+  ok('Rev 51: boot asks the gateway who this is', /OMS_GATEWAY\+'\/api\/me'/.test(main));
+  ok('Rev 51: boot sends an unchanged initial password back to sign in', /mustChangePassword===true\)\{location\.replace\('\.\/index\.html\?reason=password'\)/.test(main));
+  ok('Rev 51: the Reset control guard is gone with the control', !/btn-reset/.test(main));
+  ok('Rev 51: no interpolation lands in a value= or href= attribute unescaped', !/(value|href)="\$\{(?!esc\()/.test(html));
   ok('every suggestion clears the twelve-character minimum',
      cases.every(([n]) => suggest(n).length >= 12));
 }

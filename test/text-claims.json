@@ -444,5 +444,44 @@
     "text": "looks for new shared work about once a minute",
     "requires_code": "if(!OMS_DIFF().length)_dirty.clear();OMS_SYNC_READY=true;",
     "why": "Rev 44's idle refresh was blocked for the life of every session by the boot migration's save() leaving all collections dirty. Live-verified 6 Sept 2026. The promise is only true with this guard in the boot sequence."
+  },
+  {
+    "id": "rev51-links-are-checked",
+    "text": "Links are checked before they are followed",
+    "requires_code": "function safeUrl(",
+    "why": "Rev 51. Stored links were rendered straight into href with no scheme check. The guide now says links are checked; this binds the sentence to the check."
+  },
+  {
+    "id": "rev51-safeurl-reaches-every-link-site",
+    "code": "function safeUrl(",
+    "symbol": "safeUrl",
+    "requires_text": "or mailto link",
+    "reachable_from": [
+      "rSOPs",
+      "gwCard",
+      "abSec",
+      "agendasCard",
+      "fyiCard",
+      "abCard"
+    ],
+    "why": "Rev 51. Existence is not reachability: a link filter that one renderer skips is not a link filter. Every renderer that draws a stored link is named here."
+  },
+  {
+    "id": "rev51-sign-out-clears-local-copy",
+    "text": "Sign Out removes that copy along with the session",
+    "requires_code": "localStorage.removeItem(OMS_LOCAL_KEY)",
+    "why": "Rev 51. Sign-out left the whole shared state in localStorage. The guide now promises it is removed; this binds the promise to the removal."
+  },
+  {
+    "id": "rev51-role-confirmed-with-gateway",
+    "text": "Your role is confirmed with the gateway at sign-in",
+    "requires_code": "OMS_GATEWAY+'/api/me'",
+    "why": "Rev 51. The role used to be read only from a sessionStorage blob written by the sign-in page. The guide now says the gateway confirms it; this binds that to the call."
+  },
+  {
+    "id": "rev51-random-initial-password",
+    "text": "The middle part is random, so a name does not determine a password",
+    "requires_code": "function omsRandomDigits(",
+    "why": "Rev 51 (E-01). The generator returned surname plus a fixed suffix, in a public file. The hint now says the middle is random; this binds it to the generator."
   }
 ]
