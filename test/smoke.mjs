@@ -2037,7 +2037,7 @@ console.log('\n# The reconciler, executed (Rev 36)');
   const build = () => {
     let now = 0, seq = 0;
     const timers = new Map();
-    const calls = { state: 0, operation: 0, posted: [] };
+    const calls = { state: 0, operation: 0, posted: [], revision: 0, batches: 0, revisionStatus: 0, batchStatus: 0, canonStatus: '' };
     const flush = async () => { for (let k = 0; k < 50; k++) await Promise.resolve(); };
     // Microtasks first: OMS_QUEUE_SYNC chains off a resolved promise, so on the
     // first call no timer exists yet and a scan-first loop would return at once.
@@ -2071,7 +2071,20 @@ console.log('\n# The reconciler, executed (Rev 36)');
           return { ok: true, status: 200, headers: { get: () => null },
                    text: async () => JSON.stringify({ state: canonical, revision: canonical.revision, schemaVersion: 2 }) };
         }
-        calls.operation++; try { calls.posted.push(JSON.parse(o.body)); } catch (_) {}
+        if (String(url).endsWith('/api/revision')) {
+          calls.revision++;
+          if (calls.revisionStatus) return { ok: false, status: calls.revisionStatus, text: async () => '{}' };
+          return { ok: true, status: 200, text: async () => JSON.stringify({ revision: canonical.revision, status: calls.canonStatus || 'ready' }) };
+        }
+        calls.operation++;
+        let body = null; try { body = JSON.parse(o.body); } catch (_) {}
+        if (body && Array.isArray(body.operations)) {
+          calls.batches++;
+          if (calls.batchStatus) return { ok: false, status: calls.batchStatus, text: async () => '{"error":"Invalid entityType"}' };
+          for (const op of body.operations) calls.posted.push(op);
+          return { ok: true, status: 202, text: async () => JSON.stringify({ accepted: true, batch: true, batchId: 'b', operationIds: body.operations.map((_, i) => 'x' + i), operationId: 'x0' }) };
+        }
+        if (body) calls.posted.push(body);
         return { ok: true, status: 202, text: async () => '{"accepted":true,"operationId":"x"}' };
       },
     };
@@ -2526,6 +2539,109 @@ console.log('\n# The reconciler, executed (Rev 36)');
     ok('Rev 59: ...and arms no pending copy', h.run(`localStorage.getItem(OMS_PENDING_KEY)`) === null);
     ok('Rev 59: ...so the close prompt stays quiet', h.run(`OMS_SYNC_PENDING()`) === false);
   }
+
+  // ---- Rev 60: one request per save, a revision peek before a state fetch, and an older gateway still works.
+  {
+    // A save touching three records is ONE POST carrying three operations.
+    const h = build();
+    h.run(`ST.tasks[0].title='Edited';ST.tasks.push({id:'n1',title:'New'});ST.notifications=[{id:'m1',subject:'s'}];OMS_BASE.notifications=[];OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(1500);
+    ok('Rev 60: three changed records go out as one batch request', h.calls.batches === 1 && h.calls.operation === 1, h.calls.batches + ' batches, ' + h.calls.operation + ' POSTs');
+    ok('Rev 60: ...carrying all three operations', h.calls.posted.length === 3 && h.calls.posted.some(o => o.entityId === 'n1') && h.calls.posted.some(o => o.entityId === 'm1'), h.calls.posted.map(o => o.entityType + '/' + o.entityId).join(','));
+    ok('Rev 60: ...and the whole batch is in flight together', h.run(`OMS_INFLIGHT&&OMS_INFLIGHT.ops.length`) === 3, h.run(`OMS_INFLIGHT&&OMS_INFLIGHT.ops.length`));
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited', _version: 2 }, { id: 'n1', title: 'New', _version: 1 }], notifications: [{ id: 'm1', subject: 's', _version: 1 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 60: ...ending Connected', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
+    ok('Rev 60: the gateway is remembered as batch-capable', h.run(`OMS_BATCH_OK`) === true);
+  }
+  {
+    // A single changed record is still a single POST: no envelope for one operation.
+    const h = build();
+    h.run(`ST.tasks[0].title='Solo';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(1500);
+    ok('Rev 60: one record is one plain operation, not a batch of one', h.calls.batches === 0 && h.calls.operation === 1 && h.calls.posted[0].entityId === 't1');
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Solo', _version: 2 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+  }
+  {
+    // An older gateway refuses the envelope with 400: fall back to one operation per POST, and stay there.
+    const h = build();
+    h.calls.batchStatus = 400;
+    h.run(`ST.tasks[0].title='Edited';ST.tasks.push({id:'n1',title:'New'});OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(1500);
+    ok('Rev 60: a gateway that refuses the batch shape gets the operations one by one', h.calls.batches === 1 && h.calls.posted.length === 2 && h.calls.operation === 3, h.calls.batches + ' batch attempts, ' + h.calls.operation + ' POSTs, ' + h.calls.posted.length + ' ops');
+    ok('Rev 60: ...and is remembered, so the next save does not try again', h.run(`OMS_BATCH_OK`) === false);
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited', _version: 2 }, { id: 'n1', title: 'New', _version: 1 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 60: ...and the save still confirms', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
+  }
+  {
+    // A read-only refusal of a batch is still reported as read-only, not as an old gateway.
+    const h = build();
+    h.run(`(function(){const f=fetch;globalThis.fetch=async(u,o)=>{
+      if(String(u).endsWith('/api/operation'))return{ok:false,status:403,text:async()=>'{"error":"read_only","code":"read_only"}'};
+      return f(u,o)};})()`);
+    h.run(`ST.tasks[0].title='Edited';ST.tasks.push({id:'n1',title:'New'});OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(5000); try { await p; } catch (_) {}
+    ok('Rev 60: a 403 on a batch is the account refusal it is', h.run(`globalThis.__b`) === 'Read only', h.run(`globalThis.__b`));
+    ok('Rev 60: ...and does not mark the gateway as batch-incapable', h.run(`OMS_BATCH_OK`) === null);
+  }
+  {
+    // While a save confirms, the pollers ask /api/revision and read the state only once it has moved.
+    const h = build();
+    h.run(`ST.tasks[0].title='Edited';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(6000);
+    ok('Rev 60: the confirmation wait peeks at the revision', h.calls.revision >= 5, h.calls.revision + ' peeks');
+    ok('Rev 60: ...and fetches no state while the revision has not moved (the one read is the pre-flight version check)', h.calls.state === 1, h.calls.state + ' state fetches');
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited', _version: 2 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 60: ...then reads the state exactly once more to confirm', h.calls.state === 2 && h.run(`globalThis.__b`) === 'Connected', h.calls.state + ' state fetches, ' + h.run(`globalThis.__b`));
+  }
+  {
+    // A gateway without /api/revision: the pollers read the state as they always did.
+    const h = build();
+    h.calls.revisionStatus = 404;
+    h.run(`ST.tasks[0].title='Edited';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(6000);
+    ok('Rev 60: a 404 on /api/revision is asked once and remembered', h.calls.revision === 1 && h.run(`OMS_REVISION_EP`) === false, h.calls.revision + ' peeks');
+    ok('Rev 60: ...and the state is polled instead', h.calls.state >= 5, h.calls.state + ' state fetches');
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited', _version: 2 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 60: ...and the save confirms', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
+  }
+  {
+    // The idle watch peeks too, and adopts only when the revision has moved.
+    const h = build();
+    h.run(`OMS_START_WATCH()`);
+    await h.advance(61000);
+    ok('Rev 60: an idle tick with nothing new is one revision peek and no state read', h.calls.revision === 1 && h.calls.state === 0, h.calls.revision + ' peeks, ' + h.calls.state + ' states');
+    h.setCanonical({ schemaVersion: 2, revision: 80, tasks: [{ id: 't1', title: 'Somebody else', _version: 2 }] });
+    await h.advance(61000);
+    ok('Rev 60: ...and a moved revision is read and adopted', h.calls.state === 1 && h.run(`ST.tasks[0].title`) === 'Somebody else' && h.run(`OMS_REVISION`) === 80, h.calls.state + ' states, ' + h.run(`ST.tasks[0].title`));
+    h.run(`OMS_STOP_WATCH()`);
+  }
+  {
+    // D-12: the consolidator's verdict on the shared record reaches the banner.
+    const h = build();
+    h.calls.canonStatus = 'conflicts-present';
+    h.run(`ST.tasks[0].title='Edited';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(1500);
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edited', _version: 2 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 60: Connected still, with the shared-record status in the banner', h.run(`globalThis.__b`) === 'Connected' && /conflicts-present/.test(h.run(`OMS_CONN_HINT()`)), h.run(`OMS_CONN_HINT()`));
+    h.calls.canonStatus = 'ready';
+    h.run(`OMS_CANON_STATUS='ready'`);
+    ok('Rev 60: ...and nothing when the record is ready', h.run(`OMS_CONN_HINT()`) === '');
+  }
+  ok('OMS-060: the dialog footer is sticky to the bottom of the scrolling dialog',
+     /\.mft\{[^}]*position:sticky;bottom:0;background:#fff/.test(html));
   {
     const h = build();
     h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);

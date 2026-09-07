@@ -786,5 +786,51 @@
     "text": "leaves nothing pending: there is no prompt on leaving the page",
     "requires_code": "if(!(e.readOnly||e.mustChange)){try{localStorage.setItem(OMS_PENDING_KEY",
     "why": "Rev 59 (FAB-39). A read-only refusal armed the pending copy and the Leave site? prompt for work that could never be saved. The guide now says such a refusal leaves nothing pending; this binds it to the branch."
+  },
+  {
+    "id": "rev60-one-request-per-save",
+    "text": "is sent to shared OMS as one request",
+    "requires_code": "OMS_POST_BATCH(fresh)",
+    "why": "Rev 60. The guide promises the whole save travels together; the promise is the batch call inside OMS_SYNC_ONCE."
+  },
+  {
+    "id": "rev60-batch-reachable",
+    "code": "function OMS_POST_BATCH",
+    "requires_text": "as one request",
+    "reachable_from": [
+      "OMS_SYNC_ONCE"
+    ],
+    "symbol": "OMS_POST_BATCH",
+    "why": "Rev 60. Existence is not reachability: the batch path must be called from the one function that sends saves."
+  },
+  {
+    "id": "rev60-revision-peek",
+    "text": "asks shared OMS only for its revision number",
+    "requires_code": "/api/revision",
+    "why": "Rev 60 (D-12). The guide describes the lighter poll; the code must call the endpoint."
+  },
+  {
+    "id": "rev60-peek-reachable",
+    "code": "function OMS_PEEK_REVISION",
+    "requires_text": "only for its revision number",
+    "reachable_from": [
+      "OMS_WAIT_FOR",
+      "OMS_START_RECONCILE",
+      "OMS_START_WATCH"
+    ],
+    "symbol": "OMS_PEEK_REVISION",
+    "why": "Rev 60. All three pollers must peek, or the saving the guide describes is partial."
+  },
+  {
+    "id": "rev60-canonical-status-banner",
+    "text": "the Connected banner says so",
+    "requires_code": "OMS_CONN_HINT()",
+    "why": "Rev 60 (D-12). manifest.status had never been shown to a client; the banner text is bound to the helper that repeats it."
+  },
+  {
+    "id": "rev60-sticky-footer",
+    "text": "stays at the bottom of the window while the fields scroll",
+    "requires_code": "position:sticky;bottom:0;background:#fff",
+    "why": "OMS-060. The footer promise is one CSS rule on .mft; remove it and the guide is wrong."
   }
 ]
