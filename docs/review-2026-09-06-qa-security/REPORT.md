@@ -197,6 +197,7 @@ Verified in canonical at revision 93: no task, SOP, person, notification or hist
 ## 11. Files in this folder
 
 - `repro-sync-path.mjs`: five reproductions against `oms.html`; all pass at Rev 54 and later, each failed at the revision it names.
+- `GATE6-PILOT-SCRIPT.md`: the five-user pilot protocol, parts A to D, with exit criteria.
 - `REPORT.md`: this document.
 
 ---
@@ -213,9 +214,9 @@ Hossam's instructions on the morning of 7 Sept, and what happened with each.
 | Why were four items left alone | Answered in §13 below; three of the four are now fixed in Rev 57. |
 | Correct `REV17.md` | Both sentences corrected in Rev 57 with the date and the decisions that replaced the promise. |
 | Update and validate the canonical backlog | `CAO_OMS_Canonical_Backlog_CURRENT_20260907.xlsx` written from the 20260906 file: FAB-11 to FAB-38 added, seven earlier closed FAB rows given the Verified Against they lacked, thirteen QA Checklist rows re-marked with a Verified Against column and ten new cases added, DEC-027 to DEC-030 logged, a Session Log sheet for the day, Source Register and Release Crosswalk rows, README note. Validation pass: no duplicate ids, every status in the dropdown list, every closed FAB row carries Verified Against, and the source workbook held no data validations or formulas, so none were lost. |
-| Delete the superseded drafts | The Rev 8 handoff draft is discarded (Drafts 45 to 44). The Rev 9 handoff and the Rev 8 backlog drafts, and the recipient for the Dean briefing draft, are blocked on a browser limitation: Outlook does not render its message list, or the Discard dialog, while its tab is hidden, and the tool cannot bring the Chrome window to the front. Needs the Outlook tab visible; two minutes of work once it is. |
+| Delete the superseded drafts | All three discarded once Hossam brought the Outlook tab to the front: the Rev 8 handoff, the Rev 9 handoff and the Rev 8 backlog drafts (Drafts 45 to 42). The Dean briefing draft, which had no recipient, now addresses Rachel Woodside and is saved, not sent. The scorecard note and the six working-session drafts were left as they were. |
 | Test the viewer role | No viewer account exists. `auth/users.json` holds one admin and five editors; Jane Westgate and Clare Il'Giovine are directory people without sign-ins (OMS-056 deliberately left them so). A throwaway viewer account can be created from the console for the test; the sign-in itself has to be typed by Hossam. |
-| Finish the gates | Gate 5 Test 3 (outage), Test 4 (recovery) and Test 5 (integrity) run live and passed; Tests 1 and 2 were covered by the concurrent-edit cases. Gate 6 is the five-person pilot and cannot be run by one reviewer. |
+| Finish the gates | Gate 5 Test 3 (outage), Test 4 (recovery) and Test 5 (integrity) run live and passed; Tests 1 and 2 were covered by the concurrent-edit cases. Gate 6 is the five-person pilot and cannot be run by one reviewer; its script is `GATE6-PILOT-SCRIPT.md` in this folder and the recording sheet is the `Gate 6 Pilot` tab of the backlog workbook. |
 | Import the real workbooks after the new importer | Events: preview on Rev 58 showed 181 rows, all 181 matching an existing Ari event so every id is kept, 180 selected after one in-workbook duplicate, one unreadable date reported; replacement confirmed: 123 update operations posted and all consolidated within about a minute under the OPS-039 workflow, Connected at canonical revision 97, 180 Ari events with every id kept, the three Standing events and the seven third-source events untouched. Key Dates: preview showed 89 rows, 88 selected, 69 matching existing Maggie events and 20 new (titles the earlier parser had never produced); replacement confirmed, result in §12.2. |
 
 ### 12.1 Security probes run against the deployed gateway (safe, single requests)
