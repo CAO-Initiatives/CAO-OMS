@@ -832,5 +832,97 @@
     "text": "stays at the bottom of the window while the fields scroll",
     "requires_code": "position:sticky;bottom:0;background:#fff",
     "why": "OMS-060. The footer promise is one CSS rule on .mft; remove it and the guide is wrong."
+  },
+  {
+    "id": "rev61-kpi-buttons",
+    "text": "each open the task list already filtered to what they counted",
+    "requires_code": "function omsShowTasks",
+    "why": "Rev 61. The guide promises the counters navigate; the promise is the function they call."
+  },
+  {
+    "id": "rev61-kpi-reachable",
+    "code": "function omsShowTasks",
+    "requires_text": "already filtered to what they counted",
+    "reachable_from": [
+      "rDash"
+    ],
+    "symbol": "omsShowTasks",
+    "why": "Rev 61. Existence is not reachability: the destination must be wired to the Dashboard that describes it."
+  },
+  {
+    "id": "rev61-at-risk-window",
+    "text": "Due in 3 Days",
+    "requires_code": "taskSt==='At risk'",
+    "why": "Rev 61. At risk is a window rather than a stored status, so the filter must special-case it or the card lands on an empty list."
+  },
+  {
+    "id": "rev61-mine-chip",
+    "text": "narrows the Dashboard to your own work",
+    "requires_code": "function omsMineOnly",
+    "why": "Rev 61. The Mine chip is bound to the scoping function behind it."
+  },
+  {
+    "id": "rev61-mine-reachable",
+    "code": "function omsMineOnly",
+    "requires_text": "narrows the Dashboard to your own work",
+    "reachable_from": [
+      "rDash"
+    ],
+    "symbol": "omsMineOnly",
+    "why": "Rev 61. The scope must actually be applied by the Dashboard, not merely defined."
+  },
+  {
+    "id": "rev61-bulk-status",
+    "text": "change the status of several tasks at once",
+    "requires_code": "function omsBulkStatus",
+    "why": "Rev 61. The bulk promise is bound to the one function that performs it."
+  },
+  {
+    "id": "rev61-bulk-reachable",
+    "code": "function omsBulkStatus",
+    "requires_text": "sends the whole change to shared OMS as one save",
+    "reachable_from": [
+      "rTasks"
+    ],
+    "symbol": "omsBulkStatus",
+    "why": "Rev 61. The control must be on the Tasks screen the sentence describes."
+  },
+  {
+    "id": "rev61-bulk-filtered-only",
+    "code": "function omsSelectedShown",
+    "requires_text": "applies only to the rows the current filter shows",
+    "why": "Rev 61. A selection surviving a filter change must not act on records the person can no longer see; the guide says so and this is the code that enforces it."
+  },
+  {
+    "id": "rev61-duplicate",
+    "text": "Copy makes a second record",
+    "requires_code": "function omsDuplicate",
+    "why": "Rev 61. The Copy control is bound to the function behind it."
+  },
+  {
+    "id": "rev61-duplicate-reachable",
+    "code": "function omsDuplicate",
+    "requires_text": "starts at Not Started",
+    "reachable_from": [
+      "rTasks"
+    ],
+    "symbol": "omsDuplicate",
+    "why": "Rev 61. Copy is promised on the task list, so it must be reachable from there."
+  },
+  {
+    "id": "rev61-remembers-screen",
+    "text": "reopens where you left it",
+    "requires_code": "function omsRestorePrefs",
+    "why": "Rev 61. The guide promises the screen is remembered; the promise is the restore function."
+  },
+  {
+    "id": "rev61-remember-reachable",
+    "code": "function omsSavePrefs",
+    "requires_text": "filters you set are remembered",
+    "reachable_from": [
+      "go"
+    ],
+    "symbol": "omsSavePrefs",
+    "why": "Rev 61. Remembering must happen on a tab change, not only when a filter is touched."
   }
 ]

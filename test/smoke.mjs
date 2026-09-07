@@ -2642,6 +2642,145 @@ console.log('\n# The reconciler, executed (Rev 36)');
   }
   ok('OMS-060: the dialog footer is sticky to the bottom of the scrolling dialog',
      /\.mft\{[^}]*position:sticky;bottom:0;background:#fff/.test(html));
+
+// ---- Rev 61: bulk status, duplicate, remembered screen, and the Dashboard counters.
+console.log('\n# Rev 61: acting on many rows, copying one, and coming back to where you were');
+{
+  const seed = () => {
+    T.fn("ST.tasks=[" +
+      "{id:'b1',title:'One',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-01',_version:1}," +
+      "{id:'b2',title:'Two',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-01',_version:1}," +
+      "{id:'b3',title:'Three',owner:'Somebody Else',status:'Not Started',due:'2030-01-01',_version:1}]");
+    T.fn("taskSt='All';taskOw='All';taskCat='All';taskQ='';taskSel.clear();_dirty.clear()");
+  };
+
+  seed();
+  T.fn("taskSel.add('b1');taskSel.add('b2');taskSel.add('b3')");
+  ok('Rev 61: every selected row is acted on when the filter shows them all',
+     G('omsSelectedShown')().length === 3, G('omsSelectedShown')().length + ' shown');
+
+  // A selection made before the filter narrowed must not act on hidden records.
+  T.fn("taskOw='Somebody Else'");
+  ok('Rev 61: a selection outside the current filter is ignored',
+     G('omsSelectedShown')().join(',') === 'b3', G('omsSelectedShown')().join(','));
+  T.fn("taskOw='All'");
+
+  // The bulk change goes through the ordinary save path: dirty marked once.
+  seed();
+  T.fn("taskSel.add('b1');taskSel.add('b2')");
+  T.fn("omsBulkStatus('In Progress')");
+  const st = id => (T.st.tasks.find(x => x.id === id) || {}).status;
+  ok('Rev 61: the selected rows take the new status', st('b1') === 'In Progress' && st('b2') === 'In Progress',
+     st('b1') + '/' + st('b2'));
+  ok('Rev 61: an unselected row is untouched', st('b3') === 'Not Started', st('b3'));
+  ok('Rev 61: it marks the collection dirty once, so the save is one batch',
+     T.fn("_dirty.has('tasks')") === true && T.fn('_dirty.size') === 1, T.fn('_dirty.size') + ' collections');
+  ok('Rev 61: the selection is cleared after it is applied', T.fn('taskSel.size') === 0);
+  ok('Rev 61: it never writes a status onto a record it was not given',
+     T.st.tasks.every(x => ['Not Started', 'In Progress'].includes(x.status)));
+
+  // Nothing to do is not an error, and must not queue an empty save.
+  seed();
+  T.fn("taskSel.add('b1')");
+  T.fn("omsBulkStatus('Not Started')");
+  ok('Rev 61: setting the status a row already has changes nothing',
+     T.fn('_dirty.size') === 0, T.fn('_dirty.size') + ' collections dirty');
+
+  // Duplicate.
+  seed();
+  T.fn("ST.tasks[0].status='Complete';ST.tasks[0].dependsOn='b2';ST.tasks[0]._updatedBy='someone'");
+  const before = T.st.tasks.length;
+  T.fn("omsDuplicate('tasks','b1')");
+  ok('Rev 61: Copy adds exactly one record', T.st.tasks.length === before + 1, T.st.tasks.length + ' tasks');
+  const copy = T.st.tasks[T.st.tasks.length - 1];
+  ok('Rev 61: ...with a new id', copy.id && copy.id !== 'b1', copy.id);
+  ok('Rev 61: ...a name that says it is a copy', /\(copy\)$/.test(copy.title), copy.title);
+  ok('Rev 61: ...starting at Not Started rather than inheriting a completion',
+     copy.status === 'Not Started', copy.status);
+  ok('Rev 61: ...waiting on nothing', !copy.dependsOn, copy.dependsOn);
+  ok('Rev 61: ...and claiming none of the original history',
+     copy._version === undefined && copy._updatedBy === undefined);
+  ok('Rev 61: the original is left exactly as it was',
+     T.st.tasks[0].status === 'Complete' && T.st.tasks[0].id === 'b1');
+
+  // At risk is a window, not a stored status.
+  T.fn("ST.tasks=[{id:'r1',title:'Soon',status:'Not Started',due:'" +
+       new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "'}," +
+       "{id:'r2',title:'Later',status:'Not Started',due:'2099-01-01'}," +
+       "{id:'r3',title:'Soon but done',status:'Complete',due:'" +
+       new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "'}]");
+  T.fn("taskSt='At risk';taskOw='All';taskCat='All';taskQ=''");
+  const risk = G('omsTaskRows')().map(x => x.id);
+  ok('Rev 61: At risk selects work due within three days', risk.includes('r1'), risk.join(','));
+  ok('Rev 61: ...not work due far off', !risk.includes('r2'), risk.join(','));
+  ok('Rev 61: ...and not work already finished', !risk.includes('r3'), risk.join(','));
+  ok('Rev 61: no record actually carries At risk as a status',
+     T.st.tasks.every(x => x.status !== 'At risk'));
+  // At risk must NOT inherit the reminder path's exclusion of owners with no
+  // email. That exclusion is right for drafts and wrong for a risk counter,
+  // because unassigned work is the likeliest to slip.
+  T.fn("ST.tasks=[{id:'u1',title:'Nobody owns this',status:'Not Started',due:'" +
+       new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10) + "'}]");
+  ok('Rev 61: unassigned work still counts as at risk',
+     G('tasksAtRisk')(3).length === 1, G('tasksAtRisk')(3).length + ' at risk');
+  ok('Rev 61: ...while the reminder path still skips it, having nobody to write to',
+     G('tasksDueSoon')(3).length === 0, G('tasksDueSoon')(3).length + ' reminders');
+
+  // The Dashboard counters land on the list they counted.
+  T.fn("taskSt='All';taskQ='noise';taskCat='Cabinet'");
+  T.fn("omsShowTasks('Overdue')");
+  ok('Rev 61: a counter sets its own filter', T.fn('taskSt') === 'Overdue', T.fn('taskSt'));
+  ok('Rev 61: ...and clears the filters that would hide its rows',
+     T.fn('taskQ') === '' && T.fn('taskCat') === 'All', T.fn('taskQ') + '/' + T.fn('taskCat'));
+  ok('Rev 61: ...and lands on the task screen', T.fn('curTab') === 'tasks', T.fn('curTab'));
+
+  // Remembered screen and filters. The harness element mock answers false to
+  // every classList.contains, so it is told which ids are real tabs; the product
+  // check itself is left exactly as it ships.
+  T.fn("['dash','tasks','admin','import'].forEach(id=>{document.getElementById(id).classList.contains=(c)=>c==='tab'})");
+  T.fn("taskSt='Blocked';taskOw='All';taskSort='due';taskSortDir='desc';dashMine=true;curTab='tasks';omsSavePrefs()");
+  T.fn("taskSt='All';taskSort='';taskSortDir='asc';dashMine=false;curTab='dash'");
+  const back = G('omsRestorePrefs')();
+  ok('Rev 61: the remembered tab comes back', back === 'tasks', String(back));
+  ok('Rev 61: ...and the filters with it',
+     T.fn('taskSt') === 'Blocked' && T.fn('taskSort') === 'due' && T.fn('taskSortDir') === 'desc',
+     T.fn('taskSt') + '/' + T.fn('taskSort') + '/' + T.fn('taskSortDir'));
+  ok('Rev 61: ...including the Mine scope', T.fn('dashMine') === true);
+  ok('Rev 61: preferences never reach the synced state',
+     !JSON.stringify(T.st).includes('cao_oms_prefs'));
+
+  // A tab this account may not open must not be restored onto.
+  T.fn("curTab='admin';omsSavePrefs()");
+  T.fn("OMS_USER={role:'editor',displayName:'An Editor'}");
+  ok('Rev 61: an editor is not restored onto the Admin tab',
+     G('omsRestorePrefs')() === null, String(G('omsRestorePrefs')()));
+  T.fn("curTab='import';omsSavePrefs()");
+  T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'}");
+  ok('Rev 61: a viewer is not restored onto Import',
+     G('omsRestorePrefs')() === null, String(G('omsRestorePrefs')()));
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+
+  // A stored tab that no longer exists must not blank the screen.
+  T.fn("curTab='nosuchtab';omsSavePrefs()");
+  ok('Rev 61: an unknown stored tab is refused rather than rendered',
+     G('omsRestorePrefs')() === null);
+  T.fn("curTab='dash';omsSavePrefs()");
+
+  // Read-only accounts get no bulk controls and no copy.
+  T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'}");
+  T.fn("ST.tasks=[{id:'v1',title:'One',status:'Not Started',_version:1}];taskSel.clear();taskSel.add('v1');_dirty.clear()");
+  T.fn("omsBulkStatus('Complete')");
+  ok('Rev 61: a viewer cannot bulk-change status',
+     T.st.tasks[0].status === 'Not Started' && T.fn('_dirty.size') === 0, T.st.tasks[0].status);
+  const n0 = T.st.tasks.length;
+  T.fn("omsDuplicate('tasks','v1')");
+  ok('Rev 61: a viewer cannot copy a record', T.st.tasks.length === n0, T.st.tasks.length + ' tasks');
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+  T.fn("_dirty.clear();taskSel.clear()");
+}
+ok('Rev 61: the counters are real buttons, not clickable divs',
+   /<button type="button" class="kpi r klk"/.test(html) && /<button type="button" class="kpi y klk"/.test(html));
+ok('Rev 61: the bulk bar is hidden from print', /class="bulkbar no-print"/.test(html));
   {
     const h = build();
     h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
@@ -3009,7 +3148,7 @@ console.log('\n# Rev 54: sorting, statuses and saved views (C-04, C-11, C-05, R-
     ok('C-11: the chip order is the display order it has always had',
        order().join(',') === 'In Progress,Not Started,Complete,Retired', order().join(','));
     ok('C-11: the chips are built from the constant, not a second copy',
-       /'All','Overdue','Blocked',\.\.\.omsTaskStatusOrder\(\)/.test(main));
+       /'All','Overdue','At risk','Blocked',\.\.\.omsTaskStatusOrder\(\)/.test(main));
     ok('C-11: and so is the Status box on the task form',
        /OMS_TASK_STATUSES\.map\(/.test(String(G('openTaskModal') || '')));
     ok('C-11: no hardcoded status list survives in rTasks or the form',
@@ -3453,7 +3592,7 @@ console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
   ok('C-09: the overlay is announced as a dialog',
      /class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle"/.test(html));
   ok('C-09: chips and pills are focusable and named as buttons',
-     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length === 11,
+     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length === 13,
      (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length + ' found');
   ok('C-09: one delegated handler gives them Enter and Space',
      /t\.closest\('\.chip,\.pill'\)/.test(main) && /e\.key!=='Enter'&&e\.key!==' '/.test(main),
