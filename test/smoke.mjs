@@ -342,8 +342,10 @@ if (typeof writeV === 'function' && typeof listV === 'function' &&
     finally { sandbox.localStorage.removeItem('cao_oms_views') }
   })());
 }
+// Rev 65 added taskTemplates, a collection the consolidator and the operation
+// schema had carried since the data side was built; sixteen is the new count.
 ok('saved views add no synced collection',
-   COLLECTIONS.length === 15 && !COLLECTIONS.some(c => /^(saved)?views$/i.test(c)),
+   COLLECTIONS.length === 16 && !COLLECTIONS.some(c => /^(saved)?views$/i.test(c)),
    'Rev 18 owns the sync surface; Rev 17 must not widen it');
 
 // ---------------------------------------------------------------- 10. Auto-extending horizon (item 5)
@@ -2865,6 +2867,52 @@ console.log('\n# Rev 63: every grid exports what it shows, and the Key Dates per
   ok('Rev 63: the Key Dates period has no upper limit', !/months>24/.test(main) && /omsApplyKeyDatesRange/.test(main));
   T.fn("const __s=JSON.parse(globalThis.__snap);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.rob=__s.r;OMS_REVISION=__s.rev;ST.people=[];_dirty.clear();taskSel.clear()");
 }
+// ---- Rev 65: one search box, and task templates.
+console.log('\n# Rev 65: one search box across four record types, and templates applied on a hand-made event only');
+{
+  T.fn("globalThis.__snap65=JSON.stringify({t:ST.tasks,e:ST.events,s:ST.sops,p:ST.people,tt:ST.taskTemplates||null})");
+  T.fn("ST.people=[{id:'hossam-elsaie',name:'Hossam Elsaie',email:'hossam.elsaie@advocatehealth.org',role:'Strategy',active:true},{id:'gone',name:'Cabinet Ghost',email:'g@x.org',active:false}];" +
+       "ST.tasks=[{id:'t1',title:'Prep cabinet deck',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-01'},{id:'t2',title:'Cabinet scorecards',owner:'Ari Ball',status:'In Progress'},{id:'t3',title:'Unrelated',owner:'x',notes:'mentions cabinet in notes',status:'Not Started'}];" +
+       "ST.events=[{id:'e1',title:'Cabinet meeting',date:'2030-02-02',category:'Cabinet'},{id:'e2',title:'Cabinet retired',date:'2030-02-03',status:'Retired'}];" +
+       "ST.sops=[{id:'s1',process:'Cabinet agenda process',owner:'Hossam Elsaie'}]");
+  const g = G('omsGlobalSearch')('cab');
+  ok('Rev 65: groups come back in a fixed order', g.map(x => x.type).join(',') === 'tasks,events,sops', g.map(x => x.type).join(','));
+  ok('Rev 65: a title that starts with the query ranks above one that contains it',
+     g[0].items[0].id === 't2' && g[0].items[1].id === 't1', g[0].items.map(i => i.id).join(','));
+  ok('Rev 65: a match in a secondary field ranks last', g[0].items[2].id === 't3' && g[0].items[2].rank === 3);
+  ok('Rev 65: a retired event is not offered', g[1].items.length === 1 && g[1].items[0].id === 'e1');
+  ok('Rev 65: an inactive person is not offered', !g.some(x => x.type === 'people'));
+  ok('Rev 65: a person is found by name', G('omsGlobalSearch')('hoss').some(x => x.type === 'people' && x.items[0].id === 'hossam-elsaie'));
+  ok('Rev 65: one character is too little to search on', G('omsGlobalSearch')('c').length === 0);
+  ok('Rev 65: no group holds more than five', G('omsGlobalSearch')('e').every(x => x.items.length <= 5));
+
+  T.fn("ST.taskTemplates=[{id:'tpl-x',name:'X',category:'Cabinet',lines:[{title:'Agenda',offsetDays:-7,owner:'Hossam Elsaie',priority:'High'},{title:'Minutes',offsetDays:2}]},{id:'tpl-y',name:'Y',category:'Other',lines:[{title:'Nope'}]}]");
+  ok('Rev 65: templates are matched by event category', G('omsTemplatesFor')('Cabinet').length === 1 && G('omsTemplatesFor')('Board').length === 0);
+  ok('Rev 65: a template id follows the tpl-<slug> convention and does not collide',
+     G('omsTemplateId')('X') === 'tpl-x-2' && G('omsTemplateId')('Board meeting prep') === 'tpl-board-meeting-prep');
+  ok('Rev 65: days are added on the calendar, across a month boundary', G('omsAddDays')('2030-03-01', -1) === '2030-02-28' && G('omsAddDays')('2030-01-31', 1) === '2030-02-01');
+  const n0 = T.st.tasks.length;
+  const made = G('omsApplyTemplates')({ id: 'e9', title: 'Cabinet in March', date: '2030-03-10', category: 'Cabinet' });
+  const mine = T.st.tasks.filter(t => t.sourceEventId === 'e9');
+  ok('Rev 65: applying a template creates one linked task per line', made === 2 && T.st.tasks.length === n0 + 2 && mine.length === 2, made + ' made');
+  ok('Rev 65: ...dated from the event', mine.map(t => t.due).join(',') === '2030-03-03,2030-03-12', mine.map(t => t.due).join(','));
+  ok('Rev 65: ...owner resolved through the directory', mine[0].ownerId === 'hossam-elsaie' && mine[0].ownerEmail === 'hossam.elsaie@advocatehealth.org');
+  ok('Rev 65: ...priority kept, or Medium when the line has none', mine[0].priority === 'High' && mine[1].priority === 'Medium');
+  ok('Rev 65: ...starting at Not Started in the event\'s category, waiting on nothing',
+     mine.every(t => t.status === 'Not Started' && t.category === 'Cabinet' && t.dependsOn === '' && t.sourceEventTitle === 'Cabinet in March'));
+  ok('Rev 65: a category with no template creates nothing', G('omsApplyTemplates')({ id: 'e8', title: 'x', date: '2030-03-10', category: 'Board' }) === 0);
+  ok('Rev 65: the offer names the count and the lines', /Create the 2 standard tasks for Cabinet/.test(G('omsTemplateOfferHtml')('Cabinet')) && G('omsTemplateOfferHtml')('Board') === '');
+  ok('Rev 65: the collection syncs like the others', T.fn("OMS_COLLECTIONS.includes('taskTemplates')") === true);
+  const importFns = (main.match(/function (\w*[Ii]mport\w*)\(/g) || []).map(m => m.replace(/^function /, '').replace(/\($/, ''));
+  ok('Rev 65: no importer applies a template (' + importFns.length + ' import functions checked)',
+     importFns.length > 3 && importFns.every(n => !/omsApplyTemplates|omsTemplatesFor/.test(String(G(n) || ''))));
+  ok('Rev 65: only the NEW-event branch of the save applies a template',
+     /\}else\{ST\.events\.push\(o\);[^]*?omsApplyTemplates\(o\)/.test(String(G('saveModal'))) && (String(G('saveModal')).match(/omsApplyTemplates\(/g) || []).length === 1);
+  ok('Rev 65: the Add Event dialog carries the offer only for a new event', /id="f_tpl_block">\$\{id\?'':omsTemplateOfferHtml\(e\.category\)\}/.test(String(G('openEvModal'))));
+  T.fn("const __s=JSON.parse(globalThis.__snap65);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.people=__s.p;if(__s.tt)ST.taskTemplates=__s.tt;else delete ST.taskTemplates;_dirty.clear()");
+}
+ok('Rev 65: the header carries the search box', /<input class="srch gsin" id="gsearch"/.test(html) && /id="gsres" class="gsres" hidden/.test(html));
+
 ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phone neither scrolls sideways nor zooms on focus',
    /@media\(max-width:600px\)\{header\{flex-wrap:wrap[^}]*\}\.hr\{flex-wrap:wrap\}/.test(html)
    && /#mbody input,#mbody select,#mbody textarea\{font-size:16px\}/.test(html));
@@ -3699,8 +3747,9 @@ console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
      'an unlabeled input is read out as nothing at all');
   const leave = G('omsLeaveForm');
   ok('A-20: omsLeaveForm exists', typeof leave === 'function');
-  ok('A-20: the three cross-links out of an open dialog go through it',
-     (main.match(/omsLeaveForm\(function\(\)\{/g) || []).length === 3,
+  // Rev 65: the header search result is a fourth way out of an open dialog.
+  ok('A-20: the four cross-links out of an open dialog go through it',
+     (main.match(/omsLeaveForm\(function\(\)\{/g) || []).length === 4,
      (main.match(/omsLeaveForm\(function\(\)\{/g) || []).length + ' found');
   ok('A-20: one delegated listener marks the open form dirty',
      /\['input','change'\]\.forEach\(ev=>document\.addEventListener\(ev,/.test(main) &&

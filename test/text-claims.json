@@ -1093,5 +1093,76 @@
     "text": "form fields are sized so the phone does not zoom in when you tap one",
     "requires_code": "#mbody input,#mbody select,#mbody textarea{font-size:16px}",
     "why": "Rev 64. Mobile Safari zooms into any field under 16 px; the dialog fields were 12 px."
+  },
+  {
+    "id": "rev65-search-enter",
+    "text": "Enter opens the highlighted result",
+    "requires_code": "function omsGlobalSearchKey(",
+    "why": "Rev 65. The keyboard promise is one handler."
+  },
+  {
+    "id": "rev65-search-rank",
+    "text": "Matches that start with what you typed rank above matches that merely contain it",
+    "requires_code": "function omsSearchRank(",
+    "why": "Rev 65. The ranking rule the guide states is this function; change one, change the other."
+  },
+  {
+    "id": "rev65-search-reachable",
+    "code": "function omsGlobalSearch(",
+    "requires_text": "results are grouped by type",
+    "reachable_from": [
+      "omsGlobalSearchInput"
+    ],
+    "symbol": "omsGlobalSearch",
+    "why": "Rev 65. The header box must actually call the search."
+  },
+  {
+    "id": "rev65-search-box-present",
+    "text": "The box in the header searches tasks, events, SOPs and people at once",
+    "requires_code": "id=\"gsearch\"",
+    "why": "Rev 65. The control the guide describes must exist in the header."
+  },
+  {
+    "id": "rev65-templates-offered",
+    "code": "function omsApplyTemplates",
+    "requires_text": "offers to create them as linked tasks dated from the event",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "symbol": "omsApplyTemplates",
+    "why": "Rev 65. The template is applied by the event save; if that call goes, the offer is an empty checkbox."
+  },
+  {
+    "id": "rev65-templates-offer-shown",
+    "code": "function omsTemplateOfferHtml",
+    "requires_text": "untick the box to add the event alone",
+    "reachable_from": [
+      "openEvModal",
+      "omsRefreshTemplateOffer"
+    ],
+    "symbol": "omsTemplateOfferHtml",
+    "why": "Rev 65. The offer must be drawn on the Add Event dialog and redrawn when the category changes."
+  },
+  {
+    "id": "rev65-templates-edited-in-categories",
+    "code": "function omsTemplatesSectionHtml",
+    "requires_text": "in the Categories dialog on the Calendars tab",
+    "reachable_from": [
+      "openCategoriesModal"
+    ],
+    "symbol": "omsTemplatesSectionHtml",
+    "why": "Rev 65. The guide names the dialog; the editor must be inside it."
+  },
+  {
+    "id": "rev65-templates-sync",
+    "code": "'assignmentHistory','taskTemplates']",
+    "requires_text": "Task templates create the standard tasks",
+    "why": "Rev 65. OMS_MAP drops nothing here, but a collection missing from OMS_COLLECTIONS emits no operations at all; the guide promise depends on the collection being synced."
+  },
+  {
+    "id": "rev65-templates-save-button",
+    "text": "saved with their own Save template button",
+    "requires_code": "function omsSaveTemplate(",
+    "why": "Rev 65."
   }
 ]
