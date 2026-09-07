@@ -1461,12 +1461,18 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
     T.setST(savedST);
   }
   const prev = String(G('showImportPreview') || '');
-  ok('OMS-041: the import preview shows a Cadence column', /<th>Cadence<\/th>/.test(prev));
+  // Rev 53 (R-13). The same bit was called Cadence here, Recurring on the
+  // event form and Standing on the calendar chips. The user-facing word is
+  // Standing everywhere; the stored field is still `recurring`.
+  ok('OMS-041: the import preview shows a Standing column', /<th>Standing<\/th>/.test(prev));
   ok('OMS-041: and computes it through omsCadenceFor', /omsCadenceFor\(/.test(prev));
   ok('OMS-041: every row can be marked or unmarked in the preview',
      /toggleImportCadence\(/.test(prev) && typeof G('toggleImportCadence') === 'function');
+  // Rev 53 (R-06). Cadence is still written onto the replacement event, but a
+  // value the title rule merely worked out is no longer stored as a decision:
+  // `false` is written only when a person settled it.
   ok('OMS-041: the import writes cadence onto the replacement events',
-     /recurring:omsCadenceFor\(/.test(String(G('confirmImport') || '')));
+     /ev\.recurring=cad\.on/.test(String(G('confirmImport') || '')));
 
   // OMS-015: an appended note must never destroy what is already there.
   const append = G('omsAppendNote');
@@ -2447,6 +2453,270 @@ console.log('\n# The reconciler, executed (Rev 36)');
      h3.run(`typeof OMS_INFLIGHT==='undefined'?'absent':OMS_INFLIGHT`) === null);
   ok('...and no reconciler is started for it', h3.timers.size === 0,
      h3.timers.size + ' timers pending');
+}
+
+// ================================================================ REV 53
+// The workbook importer. Every assertion here stands for a defect that was in
+// the shipped artifact and that the rest of this suite did not see.
+console.log('\n# Workbook importer (Rev 53)');
+{
+  const savedST53 = T.st;
+  const cut53 = html.indexOf('const OMS_REV_LOG');
+  const end53 = cut53 > -1 ? html.indexOf('];', cut53) : -1;
+  const prose53 = (cut53 > -1 && end53 > -1) ? html.slice(0, cut53) + html.slice(end53) : html;
+  const ciSrc = String(G('confirmImport') || '');
+  const prevSrc = String(G('showImportPreview') || '');
+
+  // ---- B-02: three random characters is not enough for a 182-row import
+  const uid53 = G('uid');
+  ok('B-02: uid is defined', typeof uid53 === 'function');
+  if (typeof uid53 === 'function') {
+    const n = 20000, seen = new Set();
+    for (let i = 0; i < n; i++) seen.add(uid53());
+    ok('B-02: 20000 ids minted back to back are all distinct', seen.size === n,
+       seen.size + ' of ' + n + ' - a collision here is a record OMS_MAP drops in silence');
+    ok('B-02: the random tail is eight characters wide',
+       /Math\.random\(\)\.toString\(36\)\.slice\(2,10\)/.test(String(uid53)));
+  }
+
+  // ---- B-04: the sheet skip list never skipped anything
+  ok('B-04: the sheet skip list is lower-cased on BOTH sides',
+     /includes\(String\(s\)\.toLowerCase\(\)\)/.test(String(G('processImportFile') || '')));
+
+  // ---- B-06/B-13/B-14: dates that are not dates
+  const xl53 = G('xlSerialToDate');
+  ok('B-06: xlSerialToDate is defined', typeof xl53 === 'function');
+  if (typeof xl53 === 'function') {
+    ok('B-06: a real slash date still parses', xl53('3/4/2026') === '2026-03-04');
+    ok('B-06: a two-digit year is still expanded', xl53('3/4/26') === '2026-03-04');
+    ok('B-06: an ISO cell still passes through', xl53('2026-03-04') === '2026-03-04');
+    ok('B-06: an ISO timestamp is trimmed to the date', xl53('2026-03-04T09:00:00Z') === '2026-03-04');
+    ok('B-06: 13/45/2026 is REFUSED, not turned into 2026-13-45',
+       xl53('13/45/2026') === '', 'this one rendered NaN on the Dean-facing calendar');
+    ok('B-06: an impossible ISO date is refused', xl53('2026-13-45') === '');
+    ok('B-06: 2/30 is refused - the round trip through Date catches it', xl53('2/30/2026') === '');
+    ok('B-14: an unanchored match no longer wins - free text is refused',
+       xl53('week of 3/4 or 3/5, TBC') === '' && xl53('next Tuesday') === '');
+    ok('B-13: serial 0 is refused rather than becoming 1899-12-30',
+       xl53(0) === '' && xl53(-5) === '' && xl53(0.5) === '');
+    ok('B-06: a real serial still converts',
+       xl53(45000) === new Date(Math.round((45000 - 25569) * 86400 * 1000)).toISOString().slice(0, 10));
+    ok('B-06: an empty cell is still empty', xl53('') === '' && xl53(null) === '');
+  }
+  ok('B-06: a workbook row whose date cell cannot be read is counted, not swallowed',
+     /_importDropped\+\+/.test(String(G('parseEventsSheet') || '')) && /_importDropped/.test(prevSrc));
+
+  // ---- B-05/B-12: the year was hard-coded
+  ok('B-05: no hard-coded 2026/2027 pair survives in the Key Dates parser',
+     !/colIndex<12\?2026:2027/.test(main));
+  const baseYear = G('omsImportBaseYear'), colYears = G('omsKeyDateColumnYears'), lead53 = G('parseKeyDateLead');
+  ok('B-05: omsImportBaseYear is defined', typeof baseYear === 'function');
+  if (typeof baseYear === 'function') {
+    ok('B-05: the year comes from the sheet name', baseYear('2028 Key Dates', []) === 2028);
+    ok('B-05: or from the first few cells', baseYear('Key Dates', [['', 'Planning calendar 2029']]) === 2029);
+    ok('B-05: a sheet stating no year returns 0, and the import refuses',
+       baseYear('Key Dates', [['Q1', 'Q2']]) === 0 && /Nothing was imported/.test(String(G('parseKeyDatesSheet') || '')));
+  }
+  if (typeof lead53 === 'function') {
+    ok('B-05: the base year is used, not 2026', lead53('9/3', 2028) === '2028-09-03');
+    ok('B-05: an explicit year in the cell still wins', lead53('9/3/2030', 2028) === '2030-09-03');
+    ok('B-05: a full month name still parses', lead53('March 3', 2028) === '2028-03-03');
+    ok('B-12: an abbreviated month parses',
+       lead53('Mar 3', 2028) === '2028-03-03' && lead53('Sept 3', 2028) === '2028-09-03' && lead53('Sep 3', 2028) === '2028-09-03');
+    ok('B-12: an ordinal suffix parses', lead53('March 3rd', 2028) === '2028-03-03' && lead53('Jan 1st', 2028) === '2028-01-01');
+    ok('B-05: an impossible date is still refused', lead53('2/30', 2028) === '');
+    ok('B-05: a line with no date is still refused', lead53('Board materials due', 2028) === '');
+  }
+  if (typeof colYears === 'function') {
+    ok('B-05: a month running backwards rolls the year forward',
+       colYears([['Sep 1\nA', 'Oct 1\nB', 'Jan 5\nC', 'Feb 2\nD']], 2026).join() === '2026,2026,2027,2027');
+    ok('B-05: a sheet running forwards stays in its own year',
+       colYears([['Jan 5\nA', 'Jun 1\nB', 'Dec 1\nC']], 2027).join() === '2027,2027,2027');
+  }
+
+  // ---- B-07: a numeric cell reaching ST.events as a Number
+  ok('B-07: every mapped scalar is stringified, not only the title',
+     /ev\[mapped\]=\(mapped==='date'/.test(String(G('parseEventsSheet') || '')));
+
+  // ---- R-05: the carry-forward key
+  const priorFor = G('omsPriorEventFor');
+  ok('R-05: omsPriorEventFor is defined', typeof priorFor === 'function');
+  if (typeof priorFor === 'function') {
+    T.setST({ events: [
+      { id: 'keep-1', source: 'Ari', title: 'Cabinet  Meeting', date: '2026-10-01', status: 'Retired', endDate: '2026-10-02', endTime: '4:00 PM', recurring: true },
+      { id: 'keep-2', source: 'Ari', title: 'Dean’s Forum', date: '2026-10-05' },
+      { id: 'keep-3', source: 'Ari', title: 'Academic Cabinet Advance and Strategy Session Day One', date: '2026-11-02' },
+      { id: 'amb-1', source: 'Ari', title: 'Ambiguous Long Title That Runs Past Forty Chars One', date: '2026-12-01' },
+      { id: 'amb-2', source: 'Ari', title: 'Ambiguous Long Title That Runs Past Forty Chars Two', date: '2026-12-01' },
+      { id: 'mag-1', source: 'Maggie', title: 'Cabinet Meeting', date: '2026-10-01' },
+    ], tasks: [] });
+    const idOf = (row, src) => { const p = priorFor(row, src || 'Ari'); return p ? p.id : null; };
+    ok('R-05: internal whitespace does not defeat the match',
+       idOf({ title: 'Cabinet Meeting', date: '2026-10-01' }) === 'keep-1');
+    ok('R-05: a straight apostrophe matches a curly one',
+       idOf({ title: "Dean's Forum", date: '2026-10-05' }) === 'keep-2');
+    ok('R-05: a title edited past the exact key still matches on date and its first 40 characters',
+       idOf({ title: 'Academic Cabinet Advance and Strategy Session Day Two', date: '2026-11-02' }) === 'keep-3');
+    ok('R-05: an ambiguous loose match is refused - two candidates is not a match',
+       idOf({ title: 'Ambiguous Long Title That Runs Past Forty Chars Three', date: '2026-12-01' }) === null);
+    ok('R-05: a different date is never a match',
+       idOf({ title: 'Cabinet Meeting', date: '2026-10-08' }) === null);
+    ok('R-05: the lookup is scoped to the source being replaced',
+       idOf({ title: 'Cabinet Meeting', date: '2026-10-01' }, 'Maggie') === 'mag-1');
+  }
+
+  // ---- R-06: a derived value is a proposal, not a decision
+  const cadFor53 = G('omsCadenceFor');
+  if (typeof cadFor53 === 'function') {
+    ok('R-06: a title-derived answer is marked undecided',
+       cadFor53({ title: 'Cabinet | Weekly Series', date: '2026-01-09' }, 'Ari').decided === false);
+    ok('R-06: so is the default false', cadFor53({ title: 'DEAC Gala', date: '2026-01-09' }, 'Ari').decided === false);
+    ok('R-06: a preview toggle IS a decision',
+       cadFor53({ title: 'DEAC Gala', date: '2026-01-09', _cadence: true }, 'Ari').decided === true);
+    ok('R-06: and so is a value already on the record',
+       cadFor53({ title: 'Cabinet Meeting', date: '2026-10-01' }, 'Ari').decided === true);
+    ok('R-05: the carry-forward now survives a whitespace edit',
+       cadFor53({ title: 'Cabinet  Meeting ', date: '2026-10-01' }, 'Ari').on === true);
+  }
+  ok('R-06: confirmImport stores cadence only when it is on or decided',
+     /if\(cad\.on\|\|cad\.decided\)ev\.recurring=cad\.on/.test(ciSrc),
+     'a derived false stored as a decision outranks the title rule for ever');
+
+  // ---- B-03 / B-11 / R-02: a matched row keeps its event
+  ok('B-03: a matched row reuses the prior id, so task links survive',
+     /id:\(prior&&prior\.id\)\|\|uid\(\)/.test(ciSrc));
+  ok('B-03: a prior id is lent to at most one row',
+     /lent\.has\(String\(prior\.id\)\)/.test(ciSrc), 'two kept duplicates must not share an id');
+  ok('R-02: Status is carried forward, so a re-import cannot un-retire an event',
+     /if\(prior\.status\)ev\.status=prior\.status/.test(ciSrc));
+  ok('B-11: End Date and End Time are carried forward',
+     /if\(prior\.endDate\)ev\.endDate=prior\.endDate/.test(ciSrc) && /if\(prior\.endTime\)ev\.endTime=prior\.endTime/.test(ciSrc));
+  ok('B-11: a note on the record survives a workbook row that carries none',
+     /notes:r\.notes\|\|\(prior&&prior\.notes\)\|\|''/.test(ciSrc));
+
+  // ---- B-03: how many task links a replacement would break
+  const orph = G('omsImportOrphanedTasks');
+  ok('B-03: omsImportOrphanedTasks is defined', typeof orph === 'function');
+  if (typeof orph === 'function') {
+    T.setST({ events: [
+      { id: 'e-keep', source: 'Ari', title: 'Kept', date: '2026-03-01' },
+      { id: 'e-gone', source: 'Ari', title: 'Dropped', date: '2026-03-02' },
+      { id: 'e-mag', source: 'Maggie', title: 'Other source', date: '2026-03-03' },
+    ], tasks: [
+      { id: 't1', title: 'a', sourceEventId: 'e-keep' },
+      { id: 't2', title: 'b', sourceEventId: 'e-gone' },
+      { id: 't3', title: 'c', sourceEventId: 'e-gone' },
+      { id: 't4', title: 'd', sourceEventId: 'e-mag' },
+      { id: 't5', title: 'e' },
+    ] });
+    ok('B-03: tasks on an event no incoming row matches are counted as orphaned',
+       orph([{ title: 'Kept', date: '2026-03-01', _status: 'new' }], 'Ari') === 2);
+    ok('B-03: nothing is orphaned when every event is matched',
+       orph([{ title: 'Kept', date: '2026-03-01', _status: 'new' },
+             { title: 'Dropped', date: '2026-03-02', _status: 'new' }], 'Ari') === 0);
+    ok('B-03: a row the preview will SKIP does not keep its event alive',
+       orph([{ title: 'Kept', date: '2026-03-01', _status: 'new' },
+             { title: 'Dropped', date: '2026-03-02', _status: 'skip' }], 'Ari') === 2);
+    ok('B-03: the other calendar source is not counted',
+       orph([], 'Ari') === 3, 'three of the five tasks belong to Ari events');
+  }
+  ok('B-03: the number is on screen in the preview and in the confirm prompt',
+     /omsImportOrphanedTasks\(/.test(prevSrc) && /omsImportOrphanedTasks\(/.test(ciSrc));
+  ok('B-03: the prompt no longer claims non-calendar data is simply unchanged',
+     !/Tasks and all non-calendar data will remain unchanged/.test(ciSrc));
+  ok('B-03: it says what happens to a task link instead',
+     /loses its source-event link/.test(ciSrc));
+
+  // ---- B-08: the import must not discard other people's pending work
+  ok('B-08: the import no longer clears every dirty collection',
+     !/_dirty\.clear\(\)/.test(ciSrc) && /_dirty\.add\('events'\)/.test(ciSrc),
+     'a task edited a moment earlier was never sent');
+
+  // ---- B-09: a safety check that can fail, and can undo
+  const snap53 = G('snapshotProtectedCollections'),
+        verify53 = G('verifyProtectedCollections'),
+        restore53 = G('restoreProtectedCollections');
+  ok('B-09: restoreProtectedCollections is defined', typeof restore53 === 'function');
+  if (typeof snap53 === 'function' && typeof verify53 === 'function' && typeof restore53 === 'function') {
+    T.setST({ events: [{ id: 'e1', source: 'Ari', title: 'A', date: '2026-01-01' }],
+              tasks: [{ id: 't1', title: 'T' }], sops: [] });
+    const s = snap53();
+    ok('B-09: the snapshot covers events too, so a rollback can restore them',
+       Object.prototype.hasOwnProperty.call(s, 'events'));
+    ok('B-09: an untouched state verifies', verify53(s) === true);
+    T.fn("ST.events.push({id:'e2',source:'Ari',title:'B',date:'2026-01-02'})");
+    ok('B-09: a change to events alone is not a failure - events are what is being replaced',
+       verify53(s) === true);
+    T.fn("ST.tasks.push({id:'t2',title:'sneaked in'})");
+    ok('B-09: a change to a protected collection DOES fail verification', verify53(s) === false,
+       'the old guard compared collections nothing between the two calls could touch');
+    restore53(s);
+    ok('B-09: and the snapshot puts every collection back',
+       (T.st.tasks || []).length === 1 && (T.st.events || []).length === 1);
+  }
+  ok('B-09: the failure path restores before it claims nothing was saved',
+     /restoreProtectedCollections\(protectedSnapshot\);alert\('Safety check failed\. Replacement was not saved/.test(ciSrc));
+  ok('B-09: the events array is built before ST.events is assigned',
+     ciSrc.indexOf('const nextEvents=') > -1 &&
+     ciSrc.indexOf('const nextEvents=') < ciSrc.indexOf('ST.events=nextEvents'));
+  ok('B-09: verification runs before the write, not after it',
+     ciSrc.indexOf('verifyProtectedCollections(protectedSnapshot)') < ciSrc.indexOf('ST.events=nextEvents'));
+
+  // ---- B-10: a workbook that would shrink a calendar
+  ok('B-10: the Events path has a replacement-size guard',
+     /SIZE CHECK/.test(ciSrc) && /currentCount>=10&&selected\.length\*2<currentCount/.test(ciSrc));
+  ok('B-10: it demands a typed REPLACE and names both numbers',
+     /Type REPLACE to remove \$\{currentCount\} records and keep only \$\{selected\.length\}/.test(ciSrc));
+  ok('B-10: and the guide describes it', /typed out a second time with both numbers/.test(prose53));
+
+  // ---- B-16: short titles were colliding
+  const xdup53 = G('crossSourceDuplicates'), dupStop = G('DUP_STOP');
+  ok('B-16: the stop list covers the words that made short titles collide',
+     ['annual', 'committee', 'board', 'office', 'dean', 'advance', 'retreat', 'call', 'review']
+       .every(w => dupStop && dupStop.has(w)));
+  if (typeof xdup53 === 'function') {
+    T.setST({ events: [
+      { id: 'm9', source: 'Maggie', title: 'Board Retreat Charlotte Airport', date: '2026-05-05' },
+      { id: 'm10', source: 'Maggie', title: 'Convocation', date: '2026-05-06' },
+      { id: 'm11', source: 'Maggie', title: 'White Coat - CLT', date: '2026-07-25' },
+    ], tasks: [] });
+    ok('B-16: one shared token between two multi-token titles is NOT a duplicate',
+       xdup53([{ title: 'Committee Review Charlotte Winston', date: '2026-05-05' }], 'Ari').length === 0,
+       'one hit over a minimum size of two scored 0.5 and passed');
+    ok('B-16: a genuinely one-token title is still matched on the token it has',
+       xdup53([{ title: 'Convocation Ceremony', date: '2026-05-06' }], 'Ari').length === 1);
+    ok('B-16: the real production duplicate is still caught',
+       xdup53([{ title: 'White Coat Ceremony - CLT', date: '2026-07-25' }], 'Ari').length === 1);
+  }
+
+  // ---- R-08: the regex and the guide have to agree
+  const der53 = G('omsDeriveCadence');
+  if (typeof der53 === 'function') {
+    ok('R-08: daily is a cadence word', der53('Daily huddle'));
+    ok('R-08: biweekly without a hyphen is a cadence word', der53('Ops sync biweekly'));
+    ok('R-08: bimonthly, with and without the hyphen', der53('Bimonthly review') && der53('Bi-monthly review'));
+    ok('R-08: annual is still deliberately excluded',
+       !der53('Annual Match Day celebration'), 'a gala once a year is not a standing meeting');
+    ok('R-08: a word merely containing a cadence word still does not match',
+       !der53('Biweeklyish') && !der53('Semimonthlyish') && !der53('Dailyish'));
+  }
+  ok('R-08: the guide lists exactly the words the regex matches',
+     /Daily, Weekly, Bi-weekly, Monthly, Bi-monthly, Quarterly, Semi-annual, Standing or Recurring/.test(prose53));
+
+  // ---- R-09: the chip counted rows that would never be written
+  ok('R-09: the Standing chip counts selected rows only',
+     /const standingCount=rows\.filter\(r=>\(r\._status==='new'\|\|r\._status==='force'\)&&omsCadenceFor/.test(prevSrc));
+  ok('R-09: and the chip renders that count', /\$\{standingCount\} Standing/.test(prevSrc));
+
+  // ---- R-13: one word for one bit
+  ok('R-13: the preview column is Standing', /<th>Standing<\/th>/.test(prevSrc) && !/<th>Cadence<\/th>/.test(prevSrc));
+  ok('R-13: the event form label is Standing', /<label>Standing<\/label>/.test(prose53));
+  ok('R-13: no interface text calls the bit a Recurring event any more',
+     !/Recurring event/.test(prose53) && !/marked <em>Recurring<\/em>/.test(prose53),
+     'the stored field is still `recurring`; the word on screen is Standing');
+  ok('R-13: the stored field name is unchanged', /id="f_recurring"/.test(html) && /e\.recurring/.test(main));
+
+  T.setST(savedST53);
 }
 
 // ---------------------------------------------------------------- 5. release metadata

@@ -44,8 +44,8 @@
   {
     "id": "recurring-flag-is-described",
     "code": "id=\"f_recurring\"",
-    "requires_text": "Cadence for anything that repeats",
-    "why": "Rev 17 added the recurring flag; nothing described it."
+    "requires_text": "Tick Standing for anything that repeats",
+    "why": "Rev 17 added the recurring flag; nothing described it. Rev 53 (R-13) renamed the user-facing word: the same bit was called Cadence on the Add Event tooltip, Recurring on the event form and Standing on the calendar chips, on adjacent screens. The stored field is still `recurring` - only the word people read changed - so the binding still guards the control and now guards the agreed word with it."
   },
   {
     "id": "category-rename-moves-tasks",
@@ -247,6 +247,87 @@
     "reachable_from": [
       "showImportPreview"
     ]
+  },
+  {
+    "id": "import-year-comes-from-the-sheet",
+    "code": "function omsImportBaseYear(",
+    "requires_text": "The sheet must state its year",
+    "why": "Rev 53 (B-05). parseKeyDateLead hard-coded `colIndex<12?2026:2027`, so the 2028 workbook would have imported silently into 2026 and 2027 and nothing anywhere would have said so. The year now comes from the sheet, and a sheet that states none is refused rather than guessed at. The refusal is only defensible if the interface says the rule beforehand, so the upload card carries it; if the derivation is ever removed the sentence has to go in the same change. reachable_from names the parser because a derivation nothing calls is the Rev 34 shape all over again.",
+    "reachable_from": [
+      "parseKeyDatesSheet"
+    ]
+  },
+  {
+    "id": "import-keeps-a-matched-event",
+    "code": "function omsPriorEventFor(",
+    "requires_text": "keeps that event",
+    "why": "Rev 53 (B-03, B-11, R-02). confirmImport rebuilt every row with a fresh uid(), so a re-import broke every task.sourceEventId link, un-retired Retired events and erased End Date and End Time set by hand. A matched row now keeps the event it matches. Three surfaces promise it - the upload card, the preview callout and the guide - and all three are false the moment the lookup stops being reached, so the preview, the write path and the cadence resolver are all named.",
+    "reachable_from": [
+      "confirmImport",
+      "omsCadenceFor"
+    ]
+  },
+  {
+    "id": "import-says-which-task-links-it-breaks",
+    "code": "function omsImportOrphanedTasks(",
+    "requires_text": "loses its source-event link",
+    "why": "Rev 53 (B-03). The prompt used to say 'Tasks and all non-calendar data will remain unchanged', which was true of the Tasks collection and untrue of the links out of it: a task pointing at an event no incoming row matched was left pointing at a record that had just been deleted. The count is now on screen before anybody types REPLACE. A promise about a number nobody computes is worse than no promise, so both the preview and the write path are named.",
+    "reachable_from": [
+      "showImportPreview",
+      "confirmImport"
+    ]
+  },
+  {
+    "id": "import-size-guard-is-described",
+    "code": "SIZE CHECK",
+    "requires_text": "typed out a second time with both numbers",
+    "why": "Rev 53 (B-10). Only the Key Dates path had a size gate. A workbook saved with one sheet, or whose sheet names changed, arrives as a handful of rows and deletes the rest of that owner's calendar without a word. The guard exists now; the guide describes it; neither is any use alone. reachable_from names confirmImport because the guard is worth nothing sitting beside the write path instead of in front of it.",
+    "reachable_from": [
+      "confirmImport"
+    ],
+    "symbol": "SIZE CHECK"
+  },
+  {
+    "id": "import-drops-unreadable-dates-in-the-open",
+    "code": "_importDropped++",
+    "requires_text": "the date cell could not be read",
+    "why": "Rev 53 (B-06). The string branches of xlSerialToDate were unanchored and split the whole cell, so '13/45/2026' became '2026-13-45' and rendered NaN on a Dean-facing calendar. Such a cell is refused now, and a refusal nobody is told about is indistinguishable from a row the workbook never had - so the count is shown in the preview. If the counter goes, the sentence promising the count must go with it.",
+    "reachable_from": [
+      "parseEventsSheet"
+    ],
+    "symbol": "_importDropped"
+  },
+  {
+    "id": "cadence-words-match-the-guide",
+    "code": "daily|bi-?weekly|bi-?monthly|weekly|monthly|quarterly|semi-?annual|standing|recurring",
+    "requires_text": "Daily, Weekly, Bi-weekly, Monthly, Bi-monthly, Quarterly, Semi-annual, Standing or Recurring",
+    "why": "Rev 53 (R-08). The regex matched seven words and the guide listed four, in the one place a reader checks what the importer is about to decide for them. The binding is the alternation itself, so adding or removing a word fails until the sentence is updated in the same change. Annual stays out of both by decision: on the live workbook every annual match is a once-a-year event, which is exactly what the standing chip must not catch.",
+    "reachable_from": [
+      "omsDeriveCadence"
+    ],
+    "symbol": "OMS_CADENCE_RE"
+  },
+  {
+    "id": "standing-is-one-word-across-the-importer",
+    "code": "<th>Standing</th>",
+    "requires_text": "shows a <strong>Standing</strong> column",
+    "why": "Rev 53 (R-13). The same bit was called Cadence in the import preview, Recurring on the event form and Standing on the calendar chips - three words for one boolean on adjacent screens. The guide now names the column, so the column and the sentence naming it fail together.",
+    "reachable_from": [
+      "showImportPreview"
+    ],
+    "symbol": "<th>Standing</th>"
+  },
+  {
+    "id": "no-blanket-unchanged-claim-without-the-check",
+    "text": "No Task and no non-calendar collection is modified",
+    "requires_code": "verifyProtectedCollections(protectedSnapshot)",
+    "why": "Rev 53 (B-08, B-09). The claim is the strongest sentence the importer makes, and until Rev 53 the code behind it did not support it in either direction: _dirty.clear() discarded pending unsent work in every other collection, and the verification compared collections that nothing between the snapshot and the comparison could have touched. The sentence may only stand while the check does."
+  },
+  {
+    "id": "a-failed-replacement-must-actually-be-undone",
+    "text": "Replacement was not saved",
+    "requires_code": "restoreProtectedCollections(protectedSnapshot)",
+    "why": "Rev 53 (B-09). The alert said the replacement was not saved and there was no code that could unsay it: the guard could not fail, and had it failed it had no way back. The sentence is allowed only while a rollback exists. Do not satisfy this with an empty restore - the smoke suite asserts that the snapshot really does put every collection back."
   },
   {
     "id": "no-calendar-sync-may-be-claimed",
