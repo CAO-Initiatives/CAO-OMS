@@ -67,6 +67,12 @@ Gate check 14 (`scripts/no_control_bytes.py`, negative suite `test/no_control_by
 
 Line endings matter here in a way they usually do not: the gate checksums `oms.html`, and `release.sh` computes SHA-256 of the working-tree file. If `core.autocrlf` rewrites LF to CRLF on checkout, every checksum mismatches and `.sh` files fail in Git Bash with `bad interpreter`. Confirm `git config --get core.autocrlf` is `false` for this repo, and that `oms.html` hashes to the value in the current release note.
 
+**Never build a multi-line script inside a shell heredoc. Write it to a file and run the file.** A heredoc feeds literal text to a command's standard input, and the shell parses that text on the way through. `<<PY` expands `$`, backticks and backslashes before the interpreter ever sees them; `<<'PY'` does not. Python and JavaScript are full of all three characters, so the wrong choice corrupts the script with no error at all.
+
+Worse, the escaping is consumed at *every* layer between the tool call, the shell and the interpreter, and it is not obvious which layer ate what. That is not theoretical: a patch script's anchor was written as a backslash followed by `n`, meaning those two characters, and arrived at Python as a real line break, so it could never match a file that held the two characters. The tell was the assertion message printing the search string across two lines. The same day, a heredoc whose closing marker carried one leading space swallowed the rest of the command and died on an unexpected end of file, twice, because the marker must sit alone at the start of a line. A body containing an apostrophe ends a single-quoted context early for the same family of reasons.
+
+So: anything longer than one line, or containing a quote, a backslash, a `$` or a backtick, is written to a file with the Write tool and then run. The content never passes through shell parsing, what you wrote is what executes, and the file survives to be re-read when the anchor fails anyway. Heredocs are for short, literal, escape-free text and nothing else. This matters most for the patch scripts that edit `oms.html`, which are exactly the case that is long, quoted and backslash-heavy.
+
 ## Verifying anything
 
 Never report state from memory or from a register row. Read it live:
