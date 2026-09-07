@@ -2911,6 +2911,17 @@ console.log('\n# Rev 65: one search box across four record types, and templates 
   ok('Rev 65: the Add Event dialog carries the offer only for a new event', /id="f_tpl_block">\$\{id\?'':omsTemplateOfferHtml\(e\.category\)\}/.test(String(G('openEvModal'))));
   T.fn("const __s=JSON.parse(globalThis.__snap65);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.people=__s.p;if(__s.tt)ST.taskTemplates=__s.tt;else delete ST.taskTemplates;_dirty.clear()");
 }
+{
+  const csp = (html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/) || [])[1] || '';
+  ok('Rev 66 (FAB-08): the artifact carries a Content Security Policy', csp.length > 0);
+  ok('Rev 66: it names only the gateway for connections', /connect-src 'self' https:\/\/cao-oms-gateway\.vercel\.app;/.test(csp) && !/connect-src[^;]*\*/.test(csp));
+  ok('Rev 66: it names the pinned SheetJS host for scripts and nothing else external', /script-src 'self' 'unsafe-inline' https:\/\/cdn\.sheetjs\.com;/.test(csp));
+  ok('Rev 66: plugins and base changes are refused', /object-src 'none'/.test(csp) && /base-uri 'self'/.test(csp));
+  ok('Rev 66: the inline search icon still loads', /img-src 'self' data:/.test(csp));
+  ok('Rev 66: the policy sits before the first stylesheet and script', html.indexOf('http-equiv="Content-Security-Policy"') < html.indexOf('<style>') && html.indexOf('http-equiv="Content-Security-Policy"') < html.indexOf('<script'));
+  const idx = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  ok('Rev 66: the sign-in page carries one too, naming the same gateway', /Content-Security-Policy/.test(idx) && /connect-src 'self' https:\/\/cao-oms-gateway\.vercel\.app/.test(idx));
+}
 ok('Rev 65: the header carries the search box', /<input class="srch gsin" id="gsearch"/.test(html) && /id="gsres" class="gsres" hidden/.test(html));
 
 ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phone neither scrolls sideways nor zooms on focus',

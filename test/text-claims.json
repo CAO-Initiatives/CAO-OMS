@@ -1164,5 +1164,23 @@
     "text": "saved with their own Save template button",
     "requires_code": "function omsSaveTemplate(",
     "why": "Rev 65."
+  },
+  {
+    "id": "rev66-csp-present",
+    "text": "carry a Content Security Policy naming the one gateway they may call",
+    "requires_code": "connect-src 'self' https://cao-oms-gateway.vercel.app",
+    "why": "Rev 66 (FAB-08). The guide describes the policy; this is the directive that does the work."
+  },
+  {
+    "id": "rev66-csp-sheetjs",
+    "text": "the one address the spreadsheet library may load from",
+    "requires_code": "script-src 'self' 'unsafe-inline' https://cdn.sheetjs.com",
+    "why": "Rev 66. The importer and the export both need SheetJS; the policy must name its host or both break silently."
+  },
+  {
+    "id": "rev66-csp-honest",
+    "text": "cannot forbid inline script",
+    "requires_code": "'unsafe-inline'",
+    "why": "Rev 66. The guide admits the limit; if inline script were ever forbidden the sentence would be false, and so would the whole application."
   }
 ]
