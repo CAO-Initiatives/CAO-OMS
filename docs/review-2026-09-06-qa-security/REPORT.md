@@ -304,6 +304,18 @@ Built to the recommendations in the handoff's section 14, on Hossam's instructio
 
 **Not verified:** no template has been written to canonical, so the collection's first real sync has not been observed. Everything above ran against the harness and the smoke suite; the served artifact was confirmed by `verify_live.sh`.
 
+### 12.7 Closing out: Rev 66 (FAB-08 CSP), data OPS-041 (DEC-019 retry), keyboard probes (7 Sept, late evening, Fable 5.1)
+
+**FAB-08, Rev 66.** Both pages carry a `Content-Security-Policy` meta tag, since GitHub Pages cannot set headers. `default-src 'none'`; `script-src 'self' 'unsafe-inline' https://cdn.sheetjs.com`; `style-src 'self' 'unsafe-inline'`; `img-src 'self' data:` for the one search icon; `connect-src 'self' https://cao-oms-gateway.vercel.app`; `form-action 'self'`; `base-uri 'self'`; `object-src 'none'`. `frame-ancestors` is not there because a meta policy cannot carry it. The honest limit is stated in the guide and pinned by a binding: the application is inline script, so `'unsafe-inline'` must stay and the policy does not stop an injected script from running; it stops it sending anything anywhere but the gateway. Verified in the layout harness with the gateway host rewritten in both the constant and the policy: no console violations, state loaded, SheetJS present, the data-URI icon drew, the export serialized, search worked. Then verified live: the served artifact matches, the sign-in page carries its policy, and the signed-in session reads Connected under the policy.
+
+**DEC-019, data OPS-041.** A second workflow, `consolidate-retry.yml`, listens with `workflow_run` for the consolidator concluding in failure and dispatches it once, after a 45-second pause. Bounded: a run started by `workflow_dispatch` is never retried, so a repeating failure gets one retry and then waits for the cron or a person. The cron is unchanged and remains the backstop. Pull request opened and merged through the GitHub tab; the merge state is recorded in the handoff.
+
+**Keyboard-only probes** (harness, real data): Escape closes an open dialog; the filter chips are focusable buttons and Enter on one sets the filter; the Dashboard counters are real buttons. This is a probe of the mechanisms Rev 54 built, not the full walk-through in section 14, which still calls for a person with the mouse unplugged. The screen reader check remains deliberately deferred.
+
+**Also prepared:** a plain-text draft reply to Rachel Woodside on OMS-026, on the Desktop as `OMS-026_reply_to_Rachel_DRAFT.txt`, written from what Rev 63 shipped; Hossam checks it against her actual question before anything is sent.
+
+**Left open, on purpose:** FAB-22 and Gate 6 (people), OMS-030 (Maggie's workbook), the two Outlook drafts (need the Outlook tab in front and an attachment), the twelve Ready-for-QA rows (need their named tests run), the Vercel Hobby plan question (procurement), the `N2s` owner string on one task (office data), and the full keyboard and screen-reader passes.
+
 ## 13. Why four items were left alone on day one, and what changed
 
 - **The scheduled consolidator drain.** It is GitHub's scheduler, not this system's code; DEC-019 already records that it does not fire reliably and asks what to do about it. OPS-039 made it a backstop rather than the recovery path: any later push now drains the inbox, and a manual dispatch works in seconds. Still open as a question of whether to rely on the schedule at all; the honest options are to accept it as-is, or to have the gateway dispatch the workflow after each accepted operation, which needs the GitHub App to hold the Actions permission and is a gateway PR.
