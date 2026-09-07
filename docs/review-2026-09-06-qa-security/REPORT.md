@@ -216,7 +216,7 @@ Hossam's instructions on the morning of 7 Sept, and what happened with each.
 | Delete the superseded drafts | The Rev 8 handoff draft is discarded (Drafts 45 to 44). The Rev 9 handoff and the Rev 8 backlog drafts, and the recipient for the Dean briefing draft, are blocked on a browser limitation: Outlook does not render its message list, or the Discard dialog, while its tab is hidden, and the tool cannot bring the Chrome window to the front. Needs the Outlook tab visible; two minutes of work once it is. |
 | Test the viewer role | No viewer account exists. `auth/users.json` holds one admin and five editors; Jane Westgate and Clare Il'Giovine are directory people without sign-ins (OMS-056 deliberately left them so). A throwaway viewer account can be created from the console for the test; the sign-in itself has to be typed by Hossam. |
 | Finish the gates | Gate 5 Test 3 (outage), Test 4 (recovery) and Test 5 (integrity) run live and passed; Tests 1 and 2 were covered by the concurrent-edit cases. Gate 6 is the five-person pilot and cannot be run by one reviewer. |
-| Import the real workbooks after the new importer | Events: preview on Rev 58 showed 181 rows, all 181 matching an existing Ari event so every id is kept, 180 selected after one in-workbook duplicate, one unreadable date reported; replacement confirmed and its update operations posted (result recorded below). Key Dates: previewed; see below. |
+| Import the real workbooks after the new importer | Events: preview on Rev 58 showed 181 rows, all 181 matching an existing Ari event so every id is kept, 180 selected after one in-workbook duplicate, one unreadable date reported; replacement confirmed: 123 update operations posted and all consolidated within about a minute under the OPS-039 workflow, Connected at canonical revision 97, 180 Ari events with every id kept, the three Standing events and the seven third-source events untouched. Key Dates: preview showed 89 rows, 88 selected, 69 matching existing Maggie events and 20 new (titles the earlier parser had never produced); replacement confirmed, result in §12.2. |
 
 ### 12.1 Security probes run against the deployed gateway (safe, single requests)
 
@@ -232,6 +232,16 @@ Hossam's instructions on the morning of 7 Sept, and what happened with each.
 | Role action for an unknown account, as admin | 404 `Account not found` |
 
 Not run, deliberately: anything resembling brute force against sign-in (no rate limiting exists; hammering the Dean's Office gateway to prove that is not a test worth running), and anything that would need a second real person's credentials.
+
+
+### 12.2 Import results on the deployed Rev 58
+
+| Source | Before | Preview | After | Canonical |
+|---|---|---|---|---|
+| Ari (Events workbook) | 180 | 181 rows, all matching, 180 selected, 1 unreadable date | 180, every id kept, 123 field updates | revision 97 |
+| Maggie (Key Dates workbook) | 68 | 89 rows, 88 selected, 69 matching, 20 new | 88: 68 ids kept, 20 created, 4 field updates | revision 98 |
+
+Total events 255 to 275; the three Standing events and the seven third-source events untouched; no task carried a source-event link at the time, so nothing could be orphaned. The consolidator absorbed the 123-commit burst without a failed run.
 
 ## 13. Why four items were left alone on day one, and what changed
 
