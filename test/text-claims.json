@@ -363,9 +363,9 @@
     "id": "sop-search-covers-notes",
     "code": "function sopHaystack(",
     "requires_text": "Searching SOPs reads the notes too",
-    "why": "OMS-028. The SOPs table renders notes in a column of their own, so a search that does not read them fails on a word the user can see on screen. If the haystack is ever narrowed back to process and owner, the sentence promising otherwise has to go with it.",
+    "why": "OMS-028. The SOPs table renders notes in a column of their own, so a search that does not read them fails on a word the user can see on screen. If the haystack is ever narrowed back to process and owner, the sentence promising otherwise has to go with it. Rev 63: the filter lives in omsSopRows, which rSOPs and the export both read.",
     "reachable_from": [
-      "rSOPs"
+      "omsSopRows"
     ]
   },
   {
@@ -981,5 +981,105 @@
     ],
     "symbol": "OMS_MINE_OWNER",
     "why": "Rev 62. The Owner list must offer the resolved value, the counter must send it, and the row filter must honor it."
+  },
+  {
+    "id": "rev63-export-exists",
+    "text": "each have an Export button",
+    "requires_code": "function omsExportGrid(",
+    "why": "Rev 63. The guide promises an export on five screens; this is the one writer they all share."
+  },
+  {
+    "id": "rev63-export-tasks-reachable",
+    "code": "function omsExportTasks",
+    "requires_text": "each have an Export button",
+    "reachable_from": [
+      "rTasks"
+    ],
+    "symbol": "omsExportTasks",
+    "why": "Rev 63. The Tasks screen must carry the control the guide promises."
+  },
+  {
+    "id": "rev63-export-cal-reachable",
+    "code": "function omsExportCalendar",
+    "requires_text": "Calendars export the list whichever view is showing",
+    "reachable_from": [
+      "rCal"
+    ],
+    "symbol": "omsExportCalendar",
+    "why": "Rev 63. The Calendar toolbar must carry the control in both views; rCal draws the toolbar for both."
+  },
+  {
+    "id": "rev63-export-sops-reachable",
+    "code": "function omsExportSops",
+    "requires_text": "each have an Export button",
+    "reachable_from": [
+      "rSOPs"
+    ],
+    "symbol": "omsExportSops",
+    "why": "Rev 63."
+  },
+  {
+    "id": "rev63-export-rob-reachable",
+    "code": "function omsExportRob",
+    "requires_text": "each have an Export button",
+    "reachable_from": [
+      "rRoB"
+    ],
+    "symbol": "omsExportRob",
+    "why": "Rev 63."
+  },
+  {
+    "id": "rev63-export-people-reachable",
+    "code": "function omsExportPeople",
+    "requires_text": "the Admin directory each have an Export button",
+    "reachable_from": [
+      "rAdmin"
+    ],
+    "symbol": "omsExportPeople",
+    "why": "Rev 63."
+  },
+  {
+    "id": "rev63-one-list-cal",
+    "code": "function omsCalItems",
+    "requires_text": "following the current filter and sort",
+    "reachable_from": [
+      "rCal",
+      "omsExportCalendar"
+    ],
+    "symbol": "omsCalItems",
+    "why": "Rev 63. The screen and the export must read the same filtered list, or a filter can be honored on screen and ignored in the file."
+  },
+  {
+    "id": "rev63-one-list-sops",
+    "code": "function omsSopRows",
+    "requires_text": "following the current filter and sort",
+    "reachable_from": [
+      "rSOPs",
+      "omsExportSops"
+    ],
+    "symbol": "omsSopRows",
+    "why": "Rev 63. Same rule for SOPs."
+  },
+  {
+    "id": "rev63-one-list-tasks",
+    "code": "function omsExportTasks",
+    "requires_text": "following the current filter and sort",
+    "reachable_from": [
+      "omsExportTasks"
+    ],
+    "symbol": "omsTaskRows",
+    "why": "Rev 63. Same rule for Tasks: the export reads omsTaskRows, the function the table reads."
+  },
+  {
+    "id": "rev63-about-revision",
+    "text": "the canonical revision it was exported at",
+    "requires_code": "['Canonical revision',OMS_REVISION]",
+    "why": "Rev 63. The About sheet's promise is one cell; remove it and the sentence is false."
+  },
+  {
+    "id": "rev63-no-period-limit",
+    "text": "as long as the sheet needs",
+    "forbids_code": "months>24",
+    "why": "Rev 63. Hossam removed the two-year limit on the Key Dates period on 7 Sept 2026; the guide says there is none, so the refusal must not come back."
   }
 ]

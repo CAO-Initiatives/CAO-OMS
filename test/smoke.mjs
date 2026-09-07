@@ -1401,7 +1401,8 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
 // ---------------------------------------------------------------- Rev 34
 {
   // OMS-041: cadence is a second axis, not more categories.
-  const rcal = String(G('rCal') || '');
+  // Rev 63: the filter moved into omsCalItems, which rCal and the export both read.
+  const rcal = String(G('omsCalItems') || '');
   ok('OMS-041: the calendar filters on recurring, not on a new field',
      /calCadence==='standing'/.test(rcal) && /e\.recurring/.test(rcal));
   ok('OMS-041: standing and one-off partition the events', /calCadence==='oneoff'/.test(rcal));
@@ -1633,7 +1634,7 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
     ok('a missing field does not become the literal word undefined',
        hay({ process: 'Annual Report' }).indexOf('undefined') === -1);
     ok('OMS-028: the SOPs table filters through sopHaystack',
-       /sopHaystack\(/.test(String(G('rSOPs') || '')));
+       /sopHaystack\(/.test(String(G('omsSopRows') || '')) && /omsSopRows\(/.test(String(G('rSOPs') || '')));
   }
 
   // OMS-029: logging is inline in the queue, because a second modal would
@@ -1703,10 +1704,10 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   ok('OMS-015: and still on the SOP form', /f_note_add/.test(sopModal));
 
   // EB OOO is availability, not a meeting.
-  const rcal = String(G('rCal') || '');
+  const rcal = String(G('omsCalItems') || '');
   ok('out of office is hidden from the calendar by default',
      /calShowOoo/.test(rcal) && /'EB OOO'/.test(rcal));
-  ok('and there is a control to bring it back', /calShowOoo=!calShowOoo/.test(rcal));
+  ok('and there is a control to bring it back', /calShowOoo=!calShowOoo/.test(String(G('rCal') || '')));
 }
 
 const suggest = G('omsSuggestedPassword');
@@ -2815,6 +2816,58 @@ ok('Rev 62: ...and that class collapses at both breakpoints with the other grids
 ok('Rev 62: the Mine tooltip no longer claims the cards below narrow', !/The counters and the lists below/.test(html));
 ok('Rev 62: the Copy control says the copy is saved at once', /is saved to shared OMS at once/.test(html)
    && !/opens for editing\. Nothing is sent\./.test(html));
+
+// ---- Rev 63: export any grid; the Key Dates period has no upper limit.
+console.log('\n# Rev 63: every grid exports what it shows, and the Key Dates period is unbounded');
+{
+  T.fn("globalThis.__snap=JSON.stringify({t:ST.tasks,e:ST.events,s:ST.sops,r:ST.rob,rev:OMS_REVISION})");
+  T.fn("globalThis.XLSX={utils:{book_new:()=>({s:[]}),aoa_to_sheet:a=>({a}),book_append_sheet:(wb,ws,n)=>wb.s.push({n,a:ws.a})},writeFile:(wb,f)=>{globalThis.__xl={wb,f}}}");
+  T.fn("ST.tasks=[{id:'x1',title:'Alpha',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-01',category:'Cabinet',_version:1}," +
+       "{id:'x2',title:'Beta',owner:'Somebody',status:'Complete',due:'2030-01-02',_version:1}];" +
+       "taskSt='All';taskOw='All';taskCat='All';taskQ='';taskSort='';taskSortDir='asc';OMS_REVISION=777;OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+  T.fn("omsExportTasks()");
+  const xl = T.fn('globalThis.__xl');
+  ok('Rev 63: the Tasks export is named for the screen and the day', /^OMS-Tasks-\d{4}-\d{2}-\d{2}\.xlsx$/.test(xl.f), xl.f);
+  ok('Rev 63: ...holds a header and one row per task shown', xl.wb.s[0].a.length === 3 && xl.wb.s[0].a[0][0] === 'Title', xl.wb.s[0].a.length + ' rows');
+  ok('Rev 63: ...and a second sheet recording the canonical revision',
+     xl.wb.s[1].n === 'About this export' && xl.wb.s[1].a.some(r => r[0] === 'Canonical revision' && r[1] === 777));
+  ok('Rev 63: ...and who exported it', xl.wb.s[1].a.some(r => r[0] === 'Exported by' && r[1] === 'Hossam Elsaie'));
+  T.fn("taskSt='Complete';omsExportTasks()");
+  ok('Rev 63: the export follows the current filter',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2 && T.fn('globalThis.__xl.wb.s[0].a[1][0]') === 'Beta', T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
+  ok('Rev 63: ...and says which filter it followed',
+     /Status: Complete/.test(T.fn('globalThis.__xl.wb.s[1].a.find(r=>r[0]==="Filter and sort")[1]')));
+  T.fn("taskSt='All';ST.events=[{id:'e1',title:'Gamma',date:'2030-03-03',source:'Ari',category:'Cabinet',recurring:true}," +
+       "{id:'e2',title:'Hidden',date:'2030-03-04',source:'Maggie',category:'EB OOO'}];calSrc='overlay';calShowOoo=false;calCadence='all';calSearch='';omsExportCalendar()");
+  const cal = T.fn('globalThis.__xl');
+  ok('Rev 63: the Calendar export holds exactly the rows the screen filters (two task due dates, one event, no hidden OOO)',
+     cal.wb.s[0].a.length === 4 && !cal.wb.s[0].a.some(r => r[3] === 'Hidden'), cal.wb.s[0].a.length + ' rows');
+  ok('Rev 63: ...sorted by date with a Standing column', cal.wb.s[0].a[1][3] === 'Alpha' && cal.wb.s[0].a[3][3] === 'Gamma' && cal.wb.s[0].a[3][4] === 'Yes');
+  T.fn("calSrc='ari';omsExportCalendar()");
+  ok('Rev 63: ...and follows the source chip', T.fn('globalThis.__xl.wb.s[0].a.length') === 2, T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
+  T.fn("calSrc='overlay';ST.sops=[{id:'s1',process:'Proc A',category:'Ops',owner:'X',reviewDue:'2030-05-05'},{id:'s2',process:'Proc B',category:'Other'}];sopQ='';sopCat='Ops';omsExportSops()");
+  ok('Rev 63: the SOP export follows its category filter',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2 && T.fn('globalThis.__xl.wb.s[0].a[1][1]') === 'Proc A');
+  T.fn("sopCat='All';ST.rob=[{id:'rob-a',ws:'WS A',cells:['one'].concat(Array(11).fill('')),st:['ip'].concat(Array(11).fill(''))}];omsExportRob()");
+  ok('Rev 63: the Cadence export writes the status in brackets beside the text, one column per month',
+     T.fn('globalThis.__xl.wb.s[0].a[1][1]') === 'one [In Progress]' && T.fn('globalThis.__xl.wb.s[0].a[0].length') === 13);
+  T.fn("ST.people=[{id:'p1',name:'A Person',email:'a@x.org',role:'Ops',active:true}];omsExportPeople()");
+  ok('Rev 63: the Directory export lists people with their sign-in state',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2 && T.fn('globalThis.__xl.wb.s[0].a[1][0]') === 'A Person');
+  T.fn("OMS_USER={role:'editor',displayName:'An Editor'};globalThis.__xl=null;omsExportPeople()");
+  ok('Rev 63: ...and only an administrator gets it', T.fn('globalThis.__xl') === null);
+  T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'};omsExportTasks()");
+  ok('Rev 63: a read-only account may export what it can read', !!T.fn('globalThis.__xl'));
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'};delete globalThis.XLSX");
+  ok('Rev 63: without the library the export refuses instead of throwing', (() => { try { T.fn('omsExportTasks()'); return true; } catch (e) { return false; } })());
+  ok('Rev 63: rCal draws from the same list the export reads', /function rCal\(\)\{ const ev=omsCalItems\(\);/.test(main));
+  ok('Rev 63: rSOPs draws from the same list the export reads', /function rSOPs\(\)\{ let f=omsSopRows\(\);/.test(main));
+  ok('Rev 63: the Key Dates period has no upper limit', !/months>24/.test(main) && /omsApplyKeyDatesRange/.test(main));
+  T.fn("const __s=JSON.parse(globalThis.__snap);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.rob=__s.r;OMS_REVISION=__s.rev;ST.people=[];_dirty.clear();taskSel.clear()");
+}
+ok('Rev 63: five Export buttons, one per grid',
+   (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length === 5,
+   (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length + ' found');
   {
     const h = build();
     h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
