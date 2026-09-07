@@ -18,7 +18,7 @@ Ordered by how much they can hurt. Build in this order; the risky ones deserve a
 
 **2. Retired task status.** Status vocabulary is currently exactly `Complete` / `In Progress` / `Not Started`, and `eventTaskStats` counts done only on an exact match to `Complete`. Three tasks were closed as `Complete` on 5 Sept that were never delivered, so every completion figure on a Dean-facing dashboard overstates delivery. Add `Retired`: excluded from overdue counts, excluded from the done numerator, visibly distinct.
 
-**3. `Recurring` boolean on events, plus a free user-maintained category list.** A category holds one value, so cadence must not be folded into it — that forces false choices like "is this Cabinet or Recurring?". Outlook already reports recurrence natively on every event, so this is the field the calendar sync will populate.
+**3. `Recurring` boolean on events, plus a free user-maintained category list.** A category holds one value, so cadence must not be folded into it — that forces false choices like "is this Cabinet or Recurring?". Outlook reports recurrence natively on every event; when it was written this sentence promised that a calendar sync would populate the field. No such sync was ever built, Rev 47 removed the two interface sentences that promised it, and since Rev 48 the field is set by hand or derived from the title at import.
 
 **4. User-editable filters, saved per user.**
 
@@ -69,6 +69,6 @@ Client releases go **direct to `main`**. A PR is required only for the gateway o
 
 ## After it is live
 
-Say **"calendar sync"** in the chat session. The first Advocate-to-OMS calendar import is deliberately held until Rev 17 ships, because it needs the `Recurring` field from item 3. The 08:00 daily reminder carries the agreed calendar scope and the `Outlook (Owner)` source format.
+*(Corrected 7 Sept 2026.)* This section once said to start the "calendar sync" after Rev 17 shipped. That sync was never built: Outlook is not a source OMS reads from, the two interface sentences that promised it were removed in Rev 47, and DEC-007 records that the workbooks own Ari's and Maggie's events while the Dean's Outlook is consulted by hand. The `Recurring` field is set on the event form or derived from the title at import (Rev 48, Rev 53).
 
 Then regenerate the canonical backlog workbook to reflect the Rev 17/18 split.

@@ -251,8 +251,8 @@
   {
     "id": "import-year-comes-from-the-sheet",
     "code": "function omsImportBaseYear(",
-    "requires_text": "The sheet must state its year",
-    "why": "Rev 53 (B-05). parseKeyDateLead hard-coded `colIndex<12?2026:2027`, so the 2028 workbook would have imported silently into 2026 and 2027 and nothing anywhere would have said so. The year now comes from the sheet, and a sheet that states none is refused rather than guessed at. The refusal is only defensible if the interface says the rule beforehand, so the upload card carries it; if the derivation is ever removed the sentence has to go in the same change. reachable_from names the parser because a derivation nothing calls is the Rev 34 shape all over again.",
+    "requires_text": "The sheet should state its year",
+    "why": "Rev 53 (B-05). parseKeyDateLead hard-coded `colIndex<12?2026:2027`, so the 2028 workbook would have imported silently into 2026 and 2027 and nothing anywhere would have said so. The year now comes from the sheet, and a sheet that states none is refused rather than guessed at. The refusal is only defensible if the interface says the rule beforehand, so the upload card carries it; if the derivation is ever removed the sentence has to go in the same change. reachable_from names the parser because a derivation nothing calls is the Rev 34 shape all over again. Rev 57: the sentence changed from must to should, because a missing year now asks for the period instead of refusing.",
     "reachable_from": [
       "parseKeyDatesSheet"
     ]
@@ -710,19 +710,19 @@
     "why": "R-11. Retirement reached the SOP form in Rev 49 and no tooltip mentioned it, so the control existed and nothing pointed at it."
   },
   {
-    "id": "rev54-intake-status-is-fixed-at-entry",
-    "text": "the status set here is the status the row keeps",
-    "requires_code": "delItem('incoming','${x.id}')",
-    "why": "A-08. Incoming, For Review, Board Commitments and Upcoming Deadlines are create-only: Rev 54 adds Delete but no edit dialog, so the form must stop implying the status can be moved on later. The claim is bound to the delete control that makes 'delete and re-add' actually possible."
+    "id": "rev57-intake-rows-can-be-edited",
+    "text": "Open <strong>Edit</strong> on the row to change the status",
+    "requires_code": "function openIntakeEdit(",
+    "why": "Rev 57 (A-08). The hint used to say the status set at entry is the status the row keeps; the four sections now have an Edit dialog, and the hint says so. Bound to the function that opens it."
   },
   {
     "id": "rev54-intake-rows-can-be-deleted",
-    "code": "<span class=\"no-print\"><button class=\"btn br2 bxs\" onclick=\"delItem('",
-    "requires_text": "delete the row and add it again",
+    "code": "<button class=\"btn br2 bxs\" onclick=\"delItem('",
+    "requires_text": "This action cannot be undone",
     "reachable_from": [
       "abSec"
     ],
-    "why": "A-08. A control on a card nobody renders is the Rev 34 shape all over again; the delete must be inside abSec, which is what draws all four sections."
+    "why": "A-08. A control on a card nobody renders is the Rev 34 shape all over again; the delete must be inside abSec, which is what draws all four sections. Rev 57: the tooltip no longer says to delete and re-add, because Edit exists."
   },
   {
     "id": "rev55-lost-pending-work-is-named",
@@ -735,5 +735,50 @@
     "text": "lands on the record as it stands when the answer arrives",
     "requires_code": "const p2=ST.people.find(x=>x.id===id)||p",
     "why": "Rev 56. Reactivate restored the account and lost the directory flag because a confirming sync replaced ST during the await and the flag was set on an orphaned record. The guide now says the change lands on the record as it stands; this binds it to the re-resolution."
+  },
+  {
+    "id": "rev57-keydates-period-picker",
+    "text": "asks you for the start and end of the period the sheet covers",
+    "requires_code": "function showKeyDatesRangePicker(",
+    "why": "Rev 57. A year-less Key Dates sheet used to be refused. Hossam decided on 7 Sept 2026 that OMS should ask for the period instead. The card and the guide say so; this binds them to the picker."
+  },
+  {
+    "id": "rev57-period-picker-is-reachable",
+    "code": "function showKeyDatesRangePicker(",
+    "symbol": "showKeyDatesRangePicker",
+    "requires_text": "the period the sheet covers",
+    "reachable_from": [
+      "processImportFile"
+    ],
+    "why": "Rev 57. The picker has to be reached from the import path itself, or a year-less sheet is refused with nothing shown."
+  },
+  {
+    "id": "rev57-outside-period-rows-are-counted",
+    "code": "_importOutside++",
+    "requires_text": "outside the period you gave",
+    "reachable_from": [
+      "parseKeyDatesSheet"
+    ],
+    "why": "Rev 57. A row the sheet dates outside the given period is dropped; a drop nobody is told about is a row the workbook never had. The preview names the count."
+  },
+  {
+    "id": "rev57-intake-edit-reaches-all-four-sections",
+    "code": "function openIntakeEdit(",
+    "symbol": "openIntakeEdit",
+    "requires_text": "Each row has Edit beside Delete",
+    "reachable_from": [
+      "abSec"
+    ],
+    "why": "Rev 57 (A-08). Existence is not reachability: the Edit dialog has to be offered on the rows, which abSec renders for all four sections."
+  },
+  {
+    "id": "rev57-intake-save-merges",
+    "code": "function omsIntakeUpsert(",
+    "symbol": "omsIntakeUpsert",
+    "requires_text": "saving changes only what you changed",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "why": "Rev 57. The save has to merge over the existing row; a rebuild would be the Rev 14 replace-not-merge defect again."
   }
 ]

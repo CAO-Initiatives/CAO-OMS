@@ -918,14 +918,14 @@ ok('the required-field check runs BEFORE the record is pushed', (() => {
   const b = main.indexOf("} else if(t==='inc')");
   if (b < 0) return false;
   const seg = main.slice(b, b + 1600);
-  const guard = seg.search(/is required/), push = seg.indexOf('ST.incoming.push');
+  const guard = seg.search(/is required/), push = seg.indexOf("omsIntakeUpsert('incoming'");
   return guard > -1 && push > -1 && guard < push;
 })(), 'validating after the push would leave a blank row behind');
 ok('the other intake forms enforce their required field too', (() => {
   const b = main.indexOf("} else if(t==='fr')");
   if (b < 0) return false;
   const seg = main.slice(b, b + 1200);
-  const guard = seg.search(/is required/), push = seg.indexOf('ST.forReview.push');
+  const guard = seg.search(/is required/), push = seg.indexOf("omsIntakeUpsert('forReview'");
   return guard > -1 && push > -1 && guard < push;
 })());
 
@@ -2588,8 +2588,12 @@ console.log('\n# Workbook importer (Rev 53)');
   if (typeof baseYear === 'function') {
     ok('B-05: the year comes from the sheet name', baseYear('2028 Key Dates', []) === 2028);
     ok('B-05: or from the first few cells', baseYear('Key Dates', [['', 'Planning calendar 2029']]) === 2029);
-    ok('B-05: a sheet stating no year returns 0, and the import refuses',
-       baseYear('Key Dates', [['Q1', 'Q2']]) === 0 && /Nothing was imported/.test(String(G('parseKeyDatesSheet') || '')));
+    ok('B-05/Rev 57: a sheet stating no year returns 0, and the parser hands the question back instead of refusing',
+       baseYear('Key Dates', [['Q1', 'Q2']]) === 0 && /if\(!range\|\|!range\.start\|\|!range\.end\)return null/.test(String(G('parseKeyDatesSheet') || '')));
+    ok('Rev 57: the import path asks for the period when the parser hands back null', /parsed===null\)\{_importPendingKD=\{sheet,name:wb\.SheetNames\[0\]\};showKeyDatesRangePicker\(/.test(main));
+    ok('Rev 57: the picker and its apply step exist', typeof G('showKeyDatesRangePicker') === 'function' && typeof G('omsApplyKeyDatesRange') === 'function');
+    ok('Rev 57: a date the sheet places outside the given period is dropped and counted', /if\(range&&range\.start&&range\.end&&\(date<range\.start\|\|date>range\.end\)\)\{_importOutside\+\+;_importDropped\+\+;return\}/.test(main));
+    ok('Rev 57: no column may roll past the end year of the period', /if\(colYears\[c\]>endY\)colYears\[c\]=endY/.test(main));
   }
   if (typeof lead53 === 'function') {
     ok('B-05: the base year is used, not 2026', lead53('9/3', 2028) === '2028-09-03');
@@ -3250,7 +3254,9 @@ console.log('\n# Rev 54: categories, the Brief and the shell (R-04, A-12, C-08, 
   ok('C-10: calItemDelete is gone', typeof G('calItemDelete') !== 'function' && !/function calItemDelete\(/.test(main));
   ok('C-10: cycleRob is gone', typeof G('cycleRob') !== 'function' && !/function cycleRob\(/.test(main),
      'it is the single-click cycle Rev 14 removed because it WAS the OMS-003 defect');
-  ok('C-10: and buildSeed and omsRemoveSignIn are NOT', /function buildSeed\(/.test(main) && /function omsRemoveSignIn\(/.test(main));
+  ok('C-10/Rev 57: omsRemoveSignIn is NOT gone (it is wired from adminHardDelete)', /function omsRemoveSignIn\(/.test(main));
+  ok('Rev 57: buildSeed and its seed arrays are gone - canonical is the only source of records', !/function buildSeed\(/.test(main) && !/const ARI=\[/.test(main) && !/const MAGGIE=\[/.test(main));
+  ok('Rev 57: the bootstrap roster is the one administrator', (() => { const sp = G('seedPeople'); if (typeof sp !== 'function') return false; const r = sp(); return r.length === 1 && r[0].accessRole === 'admin' && !/lola/i.test(JSON.stringify(r)); })());
 
   ok('C-13: the guide hero no longer quotes a version number',
      !/Version 1\.4\.0 adds individual OMS sign-in/.test(html),
@@ -3272,8 +3278,8 @@ console.log('\n# Rev 54: intake rows can be removed, and the form says so (A-08)
       const out = ab('X', type);
       ok('A-08: ' + type + ' rows offer Delete',
          out.indexOf("delItem('" + coll + "','" + id + "')") !== -1, out.slice(0, 200));
-      ok('A-08: ' + type + ' Delete sits inside a no-print wrapper so a viewer never sees it',
-         /<span class="no-print"><button class="btn br2 bxs" onclick="delItem\('/.test(out));
+      ok('A-08: ' + type + ' Edit and Delete sit inside a no-print wrapper so a viewer never sees them',
+         /<span class="no-print"><button class="btn bn bxs" onclick="openIntakeEdit\('[a-z]+','[^']+'\)"[^>]*>Edit<\/button> <button class="btn br2 bxs" onclick="delItem\('/.test(out), out.slice(out.indexOf('<span class="no-print">'), out.indexOf('<span class="no-print">') + 160));
     }
     const del = G('delItem');
     ok('A-08: delItem handles these collections', typeof del === 'function');
@@ -3282,9 +3288,29 @@ console.log('\n# Rev 54: intake rows can be removed, and the form says so (A-08)
       ok('A-08: and actually removes the row', (T.st.incoming || []).length === 0);
     }
   }
-  ok('A-08: the intake form no longer implies the status can be changed later',
-     /the status set here is the status the row keeps/.test(html),
-     'there is no edit dialog for these four sections, and the hint used to suggest triage would follow');
+  ok('Rev 57: the intake hint now points at Edit, and no longer says the status is fixed at entry',
+     /Open <strong>Edit<\/strong> on the row to change the status/.test(html) && !/the status set here is the status the row keeps/.test(html));
+  {
+    // Rev 57: the Edit dialog prefills from the row and the save merges over it.
+    T.st.incoming = [{ id: 'i9', n: '1', dateAdded: '2026-09-01', item: 'Renamed <b>x</b>', source: 'Src', status: 'Pending', input: 'in', link: '' }];
+    const oie = G('openIntakeEdit');
+    ok('Rev 57: openIntakeEdit exists', typeof oie === 'function');
+    if (typeof oie === 'function') {
+      oie('inc', 'i9');
+      const body = E('mbody').innerHTML;
+      ok('Rev 57: the dialog is prefilled and escaped', /value="Renamed &lt;b&gt;x&lt;\/b&gt;"/.test(body) && /<option selected>Pending<\/option>/.test(body), body.slice(0, 200));
+      ok('Rev 57: ...and carries the row id', T.fn('MC.id') === 'i9' && T.fn('MC.type') === 'inc');
+      G('omsIntakeUpsert')('incoming', { id: 'zzz', n: '9', dateAdded: '2030-01-01', item: 'Renamed 2', source: 'Src2', status: 'Pending', link: '', input: 'in2' });
+      const row = T.st.incoming[0];
+      ok('Rev 57: the save merges over the row, keeping id, number and date added', T.st.incoming.length === 1 && row.id === 'i9' && row.n === '1' && row.dateAdded === '2026-09-01' && row.item === 'Renamed 2' && row.input === 'in2', JSON.stringify(row));
+      T.fn("MC={type:'inc',id:'gone'}");
+      G('omsIntakeUpsert')('incoming', { id: 'q', item: 'orphan' });
+      ok('Rev 57: a row that vanished is refused, not re-created', T.st.incoming.length === 1);
+      T.fn("MC={type:'inc',id:null}");
+      G('omsIntakeUpsert')('incoming', { id: 'n2', n: '2', dateAdded: '2026-09-07', item: 'Fresh', source: '', status: 'New', link: '', input: '' });
+      ok('Rev 57: with no id the save still creates', T.st.incoming.length === 2 && T.st.incoming[1].id === 'n2');
+    }
+  }
 }
 
 console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
