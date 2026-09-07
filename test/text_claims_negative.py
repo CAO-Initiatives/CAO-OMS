@@ -87,7 +87,7 @@ t = sandbox()
 s = (t / "oms.html").read_text(encoding="utf-8")
 cut = s.find("const OMS_REV_LOG")
 head, tail = s[:cut], s[cut:]
-head = head.replace("every event AND task", "every event")
+head = head.replace("every event, task AND SOP", "every event")  # Rev 54 widened the sentence to SOPs
 (t / "oms.html").write_text(head + tail, encoding="utf-8")
 rc, out = run(t)
 check("understating a rename's blast radius is caught",
@@ -141,9 +141,10 @@ check("the revision log may describe removed behaviour without failing",
 # THE HISTORICAL CASE. Take the control off the task dialog and leave it on the
 # SOP dialog, which is exactly the artifact Rev 34 shipped. Built by
 # concatenation because the fragment contains both quote characters.
+# Rev 54 associated the label with its input (for=), so the anchor carries it.
 Q = chr(39)
 NOTE_FIELD = (
-    '<div class="fg"><label>Add a note</label>'
+    '<div class="fg"><label for="f_note_add">Add a note</label>'
     '<input class="fc" id="f_note_add" placeholder="Adds a line with your name and the date"></div>'
     '<div class="fg"><label>&nbsp;</label>'
     '<button class="btn bo" onclick="omsAddNoteTo(' + Q + 'f_notes' + Q + ',' + Q + 'f_note_add' + Q + ');return false"'

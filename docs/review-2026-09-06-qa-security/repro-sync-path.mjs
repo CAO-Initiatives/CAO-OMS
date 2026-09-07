@@ -135,5 +135,22 @@ console.log('#         OMS_HANDLE_CONFLICT adopts canonical wholesale, discardin
   ok('the two new tasks are still on screen', h.run(`ST.tasks.filter(t=>/^n/.test(t.id)).length`) === 2, h.run(`ST.tasks.map(t=>t.id).join(',')`));
 }
 
+// ------------------------------------------------------------------ CASE 5
+console.log('\n# Case 5 (found live, 6 Sept 2026). A save made while an earlier CREATE is still confirming.');
+console.log('#         CODE (Rev 50-53): OMS_DIFF regenerates the create with baseVersion 0; canonical now holds the record');
+console.log('#         at version 1; OMS_ASSERT_CURRENT treats a create as a plain mismatch and raises the conflict alert.');
+{
+  const h = build();
+  h.run(`ST.tasks.push({id:'n1',title:'New one'});save();`);
+  await h.advance(2000);                                   // create posted, WAIT_FOR polling, not yet folded
+  h.setCanonical({ ...h.canonical, revision: 76, tasks: [...h.canonical.tasks, { id: 'n1', title: 'New one', _version: 1 }] });
+  await h.advance(3000);                                   // the create lands; confirmation adopts
+  h.run(`ST.tasks[0].notes='A later note';save();`);      // second save
+  await h.advance(5000);
+  ok('no conflict alert was raised for the user\'s own create', h.alerts.length === 0, h.alerts.length + ' alert(s): ' + (h.alerts[0] || ''));
+  ok('the later note was posted', h.calls.posted.some(o => o.entityId === 't1' && o.changes && o.changes.notes === 'A later note'), h.calls.posted.map(o => o.entityId + ':' + o.action).join(','));
+  ok('the create was not sent twice', h.calls.posted.filter(o => o.action === 'create').length === 1, h.calls.posted.filter(o => o.action === 'create').length + ' create(s)');
+}
+
 console.log('\n' + (failures ? failures + ' FAIL' : 'all pass'));
 process.exit(failures ? 1 : 0);

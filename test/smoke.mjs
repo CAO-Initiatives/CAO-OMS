@@ -17,6 +17,10 @@
  */
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+// Rev 54 (C-02). A DST off-by-one cannot be measured under whatever timezone
+// the machine running the suite happens to be set to, and process.env.TZ has
+// no effect once the first Date has been constructed. A child process does.
+import { execFileSync } from 'node:child_process';
 
 const FILE = process.argv[2] || 'oms.html';
 let pass = 0, fail = 0, todo = 0;
@@ -468,7 +472,7 @@ if (typeof renameCat === 'function' && typeof catCount === 'function') {
   ok('a blank source is a no-op', renameCat('', 'X') === 0);
 }
 ok('a rename saves through the normal path, not a direct state write',
-   /function renameCategory[\s\S]{0,700}?save\(\)/.test(main),
+   /function renameCategory[\s\S]{0,900}?save\(\)/.test(main),
    'events all carry ids, so OMS_DIFF emits ordinary update operations');
 ok('the categories manager is its own dialog, opened from the toolbar',
    /openCategoriesModal\(\)/.test(main) && /t==='cats'/.test(main));
@@ -605,7 +609,14 @@ const EN_GB = [
   'licence', 'defence', 'pretence', 'analyse', 'paralyse', 'catalogue',
   'programme', 'travelling', 'labelled', 'modelling', 'whilst', 'amongst',
 ];
-const found = EN_GB.filter(w => new RegExp(w, 'i').test(html));
+// Rev 54 (C-09). aria-labelledby is an ARIA attribute name, not OMS prose,
+// and it has one legal spelling. Exempt that exact literal and nothing else.
+const ARIA_EXEMPT = 'aria-labelledby';
+const spellScan = html.split(ARIA_EXEMPT).join('aria-dialogLabelRef');
+const found = EN_GB.filter(w => new RegExp(w, 'i').test(spellScan));
+ok('the spelling exemption covers the ARIA attribute and nothing else',
+   html.split(ARIA_EXEMPT).length - 1 === (html.match(/labelled/gi) || []).length,
+   'every occurrence of "labelled" in the artifact must be that attribute');
 const greyHits = (html.match(/\bgrey\b/gi) || []).length;
 ok('no en-GB spellings in the artifact', found.length === 0,
    found.length ? 'found: ' + found.join(', ') : '');
@@ -723,7 +734,9 @@ ok('the revision log keeps its history intact',
 console.log('\n# Tab and handler renamed (Rev 22)');
 ok('the tab id is tasks, not del', /id="tasks" class="tab/.test(html) && !/id="del" class="tab/.test(html));
 ok('the nav button navigates to tasks', /go\('tasks'\)/.test(html) && !/go\('del'\)/.test(html));
-ok('the tab order array uses tasks', /'sops','tasks','guide'/.test(main) && !/'sops','del','guide'/.test(main));
+ok('every nav button names its own tab, and the name is tasks',
+   /data-tab="tasks"/.test(html) && !/data-tab="del"/.test(html),
+   'Rev 54 (C-16) removed the positional order array; the same rename invariant is now on the button itself');
 ok('renderTab dispatches on tasks', /t==='tasks'\)rTasks\(\)/.test(main) && !/t==='del'\)rDel\(\)/.test(main));
 ok('the render function is rTasks', /function rTasks\(/.test(main) && !/function rDel\(/.test(main));
 // Scoped outside the revision log: an entry explaining this rename legitimately
@@ -2442,6 +2455,22 @@ console.log('\n# The reconciler, executed (Rev 36)');
     ok('Rev 50: ...and posted on its own', h.calls.posted.some(o => o.action === 'create' && o.entityId === 'n1'), h.calls.operation + ' posted');
   }
 
+  // ---- Rev 54: an operation already in canonical is neither a conflict nor re-sent.
+  {
+    const h = build();
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Original', _version: 1 }, { id: 'n1', title: 'New one', _version: 1 }] });
+    // OMS_BASE lacks n1 (the create is still "ours"), canonical already holds it: the previous batch landed.
+    h.run(`ST.tasks.push({id:'n1',title:'New one'});ST.tasks[0].notes='A later note';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(3000);
+    ok('Rev 54: a create that already landed raises no conflict', h.run(`globalThis.__b`) !== 'Conflict', h.run(`globalThis.__b`));
+    ok('Rev 54: ...and is not re-sent', h.calls.posted.filter(o => o.action === 'create').length === 0, h.calls.posted.map(o => o.action).join(','));
+    ok('Rev 54: ...while the new edit is', h.calls.posted.some(o => o.entityId === 't1' && o.changes.notes === 'A later note'));
+    h.setCanonical({ schemaVersion: 2, revision: 77, tasks: [{ id: 't1', title: 'Original', notes: 'A later note', _version: 2 }, { id: 'n1', title: 'New one', _version: 1 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 54: ...ending Connected', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
+  }
+
   // ---- operations that never reached the gateway must not promise self-healing
   const h3 = build();
   h3.run(`OMS_POST=async()=>{throw new Error('offline')};`);
@@ -2717,6 +2746,539 @@ console.log('\n# Workbook importer (Rev 53)');
   ok('R-13: the stored field name is unchanged', /id="f_recurring"/.test(html) && /e\.recurring/.test(main));
 
   T.setST(savedST53);
+}
+
+// ================================================================ REV 52
+// Correctness pass of 6 September 2026. Every assertion here pins a defect
+// that shipped and passed the whole gate, so each one names what was wrong
+// rather than what the code now looks like.
+
+console.log('\n# Rev 54: dates (C-02, C-14, R-12)');
+{
+  const dF = G('dFrom'), tISO = G('todayISO'), iso = G('isoDate');
+  ok('todayISO and isoDate are defined', typeof tISO === 'function' && typeof iso === 'function');
+  if (typeof iso === 'function') {
+    ok('isoDate zero-pads month and day', iso(new Date(2026, 0, 5)) === '2026-01-05', iso(new Date(2026, 0, 5)));
+  }
+  if (typeof tISO === 'function') {
+    const T0 = G('TODAY');
+    ok('todayISO is the LOCAL day, not the UTC one',
+       tISO() === T0.getFullYear() + '-' + String(T0.getMonth() + 1).padStart(2, '0') + '-' + String(T0.getDate()).padStart(2, '0'),
+       'toISOString() is already tomorrow west of Greenwich for the whole evening');
+  }
+  ok('no surface derives "today" from toISOString any more',
+     !/new Date\(\)\.toISOString\(\)\.slice\(0,10\)/.test(main),
+     'four SOP and checklist sites and four intake sites did');
+
+  // C-02. The off-by-one is a property of the fall-back boundary, so it is
+  // measured under a timezone that HAS one rather than under whatever the
+  // machine running the suite happens to be set to. A child process is the
+  // only way to change TZ after the first Date has been constructed.
+  const probe = (fn) => execFileSync(process.execPath, ['-e',
+    "const NOW=new Date(2026,8,6);" +
+    "const TODAY=new Date(NOW.getFullYear(),NOW.getMonth(),NOW.getDate(),12,0,0);" +
+    "const dp=s=>new Date(s+'T12:00:00');" +
+    "console.log(Math." + fn + "((dp('2026-11-05')-TODAY)/86400000))"],
+    { env: Object.assign({}, process.env, { TZ: 'America/New_York' }), encoding: 'utf8' }).trim();
+  ok('CONTROL: 6 Sept to 5 Nov 2026 is 60 calendar days', probe('round') === '60', probe('round'));
+  ok('CONTROL: Math.ceil reads it as 61 across the fall-back boundary', probe('ceil') === '61',
+     'the clocks give back an hour and ceil rounds that hour up to a whole day');
+  ok('C-02: dFrom rounds, so it is exact either side of the boundary',
+     /Math\.round\(\(dp\(s\)-TODAY\)\/86400000\)/.test(main) && !/Math\.ceil\(\(dp\(s\)-TODAY\)/.test(main));
+  if (typeof dF === 'function') {
+    const T0 = G('TODAY');
+    const at = n => { const x = new Date(T0); x.setDate(x.getDate() + n);
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+    let bad = null;
+    for (let n = -400; n <= 400 && bad === null; n++) if (dF(at(n)) !== n) bad = n + ' -> ' + dF(at(n));
+    ok('C-02: dFrom(N days from today) === N for every day in a 800-day window', bad === null, bad || '');
+  }
+}
+
+console.log('\n# Rev 54: sorting, statuses and saved views (C-04, C-11, C-05, R-07)');
+{
+  const st = G('sortTasks');
+  if (typeof st === 'function') {
+    const rows = [{ id: 'x', due: '', owner: '', category: '' },
+                  { id: 'y', due: '2026-01-01', owner: 'Ari', category: 'A' },
+                  { id: 'z', due: '2026-02-01', owner: 'Zoe', category: 'B' }];
+    const ids = (k, d) => st(rows.slice(), k, d).map(r => r.id).join('');
+    ok('C-04: a blank due date sorts last ascending', ids('due', 'asc') === 'yzx', ids('due', 'asc'));
+    ok('C-04: and last DESCENDING too', ids('due', 'desc') === 'zyx', ids('due', 'desc'));
+    ok('C-04: a blank owner sorts last in both directions',
+       ids('owner', 'asc') === 'yzx' && ids('owner', 'desc') === 'zyx');
+    ok('C-04: a blank category sorts last in both directions',
+       ids('category', 'asc') === 'yzx' && ids('category', 'desc') === 'zyx');
+    const unk = [{ id: 'u', priority: 'Wat', _s: 'Wat' }, { id: 'h', priority: 'High', _s: 'Overdue' }];
+    ok('C-04: an unrecognized priority sorts last in both directions',
+       st(unk.slice(), 'priority', 'asc').map(r => r.id).join('') === 'hu' &&
+       st(unk.slice(), 'priority', 'desc').map(r => r.id).join('') === 'hu');
+    ok('C-04: and an unrecognized status likewise',
+       st(unk.slice(), 'status', 'asc').map(r => r.id).join('') === 'hu' &&
+       st(unk.slice(), 'status', 'desc').map(r => r.id).join('') === 'hu');
+  }
+
+  const order = G('omsTaskStatusOrder'), STL = G('OMS_TASK_STATUSES');
+  ok('C-11: OMS_TASK_STATUSES is finally read by something',
+     Array.isArray(STL) && typeof order === 'function');
+  if (Array.isArray(STL) && typeof order === 'function') {
+    ok('C-11: the chip order is the display order it has always had',
+       order().join(',') === 'In Progress,Not Started,Complete,Retired', order().join(','));
+    ok('C-11: the chips are built from the constant, not a second copy',
+       /'All','Overdue','Blocked',\.\.\.omsTaskStatusOrder\(\)/.test(main));
+    ok('C-11: and so is the Status box on the task form',
+       /OMS_TASK_STATUSES\.map\(/.test(String(G('openTaskModal') || '')));
+    ok('C-11: no hardcoded status list survives in rTasks or the form',
+       !/'In Progress','Not Started','Complete','Retired'/.test(main));
+  }
+
+  const vf = G('omsViewFilters');
+  if (typeof vf === 'function') {
+    T.fn("calCadence='standing'"); T.fn('calShowOoo=true');
+    const f = vf('cal');
+    ok('C-05: a saved calendar view records the cadence filter', f.cad === 'standing', JSON.stringify(f));
+    ok('C-05: and the out-of-office filter', f.ooo === true);
+    T.fn("calCadence='all'"); T.fn('calShowOoo=false');
+    const av = G('omsApplyView'), wv = G('omsWriteViews');
+    if (typeof av === 'function' && typeof wv === 'function') {
+      T.setST({ events: [], tasks: [], sops: [], people: [] });
+      wv([{ id: 'cv', scope: 'cal', name: 'Standing', filters: { src: 'ari', view: 'grid', q: '', cad: 'standing', ooo: true } }]);
+      av('cv');
+      ok('C-05: applying it restores both', T.fn('calCadence') === 'standing' && T.fn('calShowOoo') === true,
+         T.fn('calCadence') + '/' + T.fn('calShowOoo'));
+      wv([{ id: 'cv2', scope: 'cal', name: 'Old', filters: { src: 'ari', view: 'grid', q: '' } }]);
+      av('cv2');
+      ok('C-05: a view saved before this shipped restores to "show everything"',
+         T.fn('calCadence') === 'all' && T.fn('calShowOoo') === false);
+      wv([]);
+    }
+  }
+
+  // C-05b / R-07. A filter the control cannot display is a table that looks
+  // empty for no stated reason.
+  if (typeof G('rTasks') === 'function') {
+    T.setST({ events: [], sops: [], people: [], notifications: [],
+      tasks: [{ id: 't1', title: 'Live', owner: 'Ari Ball', category: 'Cabinet', status: 'Not Started', due: '' }] });
+    T.fn("taskSort=''"); T.fn("taskSortDir='asc'"); T.fn("taskSt='All'"); T.fn("taskQ=''");
+    T.fn("taskOw='All'"); T.fn("taskCat='Category That Went Away'");
+    const out = T.fn('rTasks()'), h = ELS['tasks'].innerHTML;
+    ok('C-05: a category filter that no longer exists is still shown as selected',
+       /selected>Category That Went Away</.test(h),
+       'the select read All while the table showed nothing, so the control was lying');
+    T.fn("taskCat='All'"); T.fn("taskOw='Somebody Who Left'");
+    T.fn('rTasks()');
+    ok('C-05: and an owner filter that no longer exists likewise',
+       /selected>Somebody Who Left</.test(ELS['tasks'].innerHTML));
+    T.fn("taskOw='All'");
+    T.setST({ events: [], sops: [], people: [], notifications: [],
+      tasks: [{ id: 't1', title: 'Nobody owns this', owner: '', category: '', status: 'Not Started', due: '' }] });
+    T.fn("taskCat='All'"); T.fn('rTasks()');
+    ok('A-06: the owner filter names the unassigned bucket instead of offering a blank option',
+       /<option value="" >\(unassigned\)<\/option>|<option value="" selected>\(unassigned\)<\/option>/.test(ELS['tasks'].innerHTML),
+       'A-06 makes unassigned tasks ordinary, so the filter that collects them has to be readable');
+  }
+  if (typeof G('rSOPs') === 'function') {
+    T.setST({ events: [], tasks: [], people: [], notifications: [],
+      sops: [{ id: 's1', process: 'Live SOP', category: 'Cabinet', owner: '', notes: '' }] });
+    T.fn("sopQ=''"); T.fn("sopCat='Category That Went Away'");
+    T.fn('rSOPs()');
+    ok('R-07: the SOP category filter tells the truth the same way',
+       /selected>Category That Went Away</.test(ELS['sops'].innerHTML));
+    T.fn("sopCat='All'");
+  }
+}
+
+console.log('\n# Rev 54: Retired means retired (A-19, C-07, R-03, R-10)');
+{
+  const ets = G('eventTaskStats');
+  if (typeof ets === 'function') {
+    T.setST({ tasks: [
+      { id: 'a', sourceEventId: 'e1', status: 'Complete' },
+      { id: 'b', sourceEventId: 'e1', status: 'Retired' },
+      { id: 'c', sourceEventId: 'e1', status: 'In Progress' }] });
+    const st = ets('e1');
+    ok('A-19: eventTaskStats reports an active count', st.active === 2, JSON.stringify(st));
+    ok('A-19: total still counts everything, for the Linked Tasks box', st.total === 3);
+    ok('A-19: the calendar pill divides by active, not total',
+       /\$\{stats\.open\}\/\$\{stats\.active\}/.test(main) && !/\$\{stats\.open\}\/\$\{stats\.total\}/.test(main),
+       'retiring work used to make an event look LESS complete');
+    ok('A-19: and so does the calendar list row',
+       /eventTaskStats\(e\.id\)\.done\}\/\$\{eventTaskStats\(e\.id\)\.active\}/.test(main));
+  }
+  const tci = G('taskCalendarItems');
+  if (typeof tci === 'function') {
+    T.setST({ tasks: [{ id: 't9', title: 'Dropped', due: '2026-09-10', status: 'Retired' }] });
+    const item = tci()[0] || {};
+    ok('C-07: a task calendar item carries its status', item.status === 'Retired', JSON.stringify(item));
+    const isR = G('isRetired');
+    ok('C-07: so isRetired can see it', typeof isR === 'function' && isR(item) === true);
+    ok('C-07: and the Retired marker is no longer withheld from tasks',
+       !/!e\.isTask&&isRetired\(e\)/.test(main),
+       'a retired task rendered on the month grid as an ordinary pill');
+    ok('C-07: the marker is still on both calendar surfaces',
+       /bret">Retired/.test(String(G('buildCalGrid') || '')) &&
+       /bret">Retired/.test(String(G('buildCalList') || '')));
+  }
+  const soon = G('sopsDueSoon'), card = G('sopReviewCard');
+  if (typeof soon === 'function' && typeof card === 'function') {
+    const T0 = G('TODAY');
+    const at = n => { const x = new Date(T0); x.setDate(x.getDate() + n);
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+    T.setST({ events: [], tasks: [], people: [], notifications: [], sops: [
+      { id: 'sa', process: 'Live one', reviewDue: at(5), owner: '', notes: '' },
+      { id: 'sb', process: 'Withdrawn one', reviewDue: at(-40), status: 'Retired', owner: '', notes: '' }] });
+    const got = soon(30).map(x => x.id);
+    ok('R-03: sopsDueSoon excludes a Retired procedure', got.indexOf('sb') === -1, got.join(','));
+    ok('R-03: and still returns the live one', got.indexOf('sa') !== -1);
+    T.setST({ events: [], tasks: [], people: [], notifications: [],
+      sops: [{ id: 'sb', process: 'Withdrawn one', reviewDue: at(-40), status: 'Retired', owner: '', notes: '' }] });
+    ok('R-03: with nothing but a Retired SOP the card does not claim a date is on file',
+       /No SOP has a review date yet/.test(card()),
+       'saying "every review is more than 30 days away" would be a different lie');
+    ok('C-14: the review horizon is built from TODAY with setDate, not from a UTC instant',
+       /const lim=new Date\(TODAY\);lim\.setDate\(lim\.getDate\(\)\+days\)/.test(main));
+  }
+  const field = G('omsStatusField');
+  if (typeof field === 'function') {
+    ok('R-10: the Status hint describes the badge, which is what is drawn',
+       /marked with a Retired badge/.test(field('f_x', '')) && !/struck through/.test(field('f_x', '')),
+       'only .bret carries the line-through; the row never did');
+    // A-21
+    const odd = field('f_x', 'Under review');
+    ok('A-21: an unrecognized status is kept as a selected option',
+       /<option selected>Under review<\/option>/.test(odd), odd);
+    ok('A-21: and Current is NOT also preselected', !/<option selected>Current<\/option>/.test(odd));
+    ok('A-21: a blank status still defaults to Current',
+       /<option selected>Current<\/option>/.test(field('f_x', '')));
+    ok('A-21: and Retired still opens on Retired', /selected>Retired/.test(field('f_x', 'Retired')));
+  }
+}
+
+console.log('\n# Rev 54: the save path (A-04, A-07, A-13, A-14, A-17)');
+{
+  const save = G('saveModal'), openT = G('openTaskModal');
+  const clear = () => { Object.keys(FIELDS).forEach(k => delete FIELDS[k]); ALERTS.length = 0; };
+  if (typeof save === 'function' && typeof openT === 'function') {
+    // A-04: fields the form does not carry must survive an edit.
+    T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [],
+      tasks: [{ id: 'k1', title: 'Old title', owner: '', status: 'Not Started', priority: 'Medium',
+                due: '', notes: '', category: '', dependsOn: '', sourceEventId: '', sourceEventTitle: '',
+                _version: 7, _updatedBy: 'oms-ari-ball', _updatedAt: '2026-09-01T00:00:00Z' }] });
+    clear(); openT('k1');
+    FIELDS.f_title = 'New title';
+    try { save(); } catch (e) {}
+    const k1 = T.st.tasks[0] || {};
+    ok('A-04: editing a task keeps _version', k1._version === 7, JSON.stringify(k1).slice(0, 140));
+    ok('A-04: and _updatedBy, which is the whole of Rev 25 attribution', k1._updatedBy === 'oms-ari-ball');
+    ok('A-04: and _updatedAt, which Rev 44 field-level merge reads', k1._updatedAt === '2026-09-01T00:00:00Z');
+    ok('A-04: while the edited field is the edited field', k1.title === 'New title');
+    ok('A-04: the task branch spreads the previous record, like ev and sop',
+       /const o=Object\.assign\(\{\},previous\|\|\{\},\{id:id\|\|uid\(\)/.test(main));
+
+    // A-07: nothing that writes may run before the cheap refusals.
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], tasks: [],
+      people: [{ id: 'ari-ball', name: 'Ari Ball', email: 'a@x.org', active: true }] });
+    clear(); openT();
+    FIELDS.f_title = '   ';
+    FIELDS.f_owner = '__new__';
+    FIELDS.f_np_first = 'Brand'; FIELDS.f_np_last = 'New'; FIELDS.f_np_email = 'brand.new@x.org';
+    try { save(); } catch (e) {}
+    ok('A-07: abandoning at "Title required" creates no person',
+       (T.st.people || []).length === 1, JSON.stringify((T.st.people || []).map(p => p.name)));
+    ok('A-07: and no task', (T.st.tasks || []).length === 0);
+    ok('A-07: and it says which field is missing', ALERTS.some(a => /Title required/i.test(a)), ALERTS.join(' | '));
+    ok('A-07: title is validated before the owner block in the source',
+       main.indexOf("if(!String(_title||'').trim()){alert('Title required')") <
+       main.indexOf("if(ownerName==='__new__'){"));
+
+    // A-17: a two-task cycle is refused where it would be created.
+    T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [], tasks: [
+      { id: 'A', title: 'Task A', status: 'Not Started', dependsOn: '', owner: '', priority: 'Medium', due: '', notes: '', category: '', sourceEventId: '', sourceEventTitle: '' },
+      { id: 'B', title: 'Task B', status: 'Not Started', dependsOn: 'A', owner: '', priority: 'Medium', due: '', notes: '', category: '', sourceEventId: '', sourceEventTitle: '' }] });
+    clear(); openT('A');
+    FIELDS.f_title = 'Task A'; FIELDS.f_dependsOn = 'B'; FIELDS.f_owner = '';
+    try { save(); } catch (e) {}
+    ok('A-17: A cannot be made to wait on B while B waits on A',
+       String((T.st.tasks[0] || {}).dependsOn || '') === '', JSON.stringify(T.st.tasks[0] || {}).slice(0, 120));
+    ok('A-17: and it says why', ALERTS.some(a => /waiting on each other|already waiting on this one/i.test(a)),
+       ALERTS.join(' | '));
+    ok('A-17: a one-way dependency still saves',
+       (() => { clear(); openT('A'); FIELDS.f_title = 'Task A'; FIELDS.f_dependsOn = ''; FIELDS.f_owner = '';
+                try { save(); } catch (e) {}
+                clear(); openT('B'); FIELDS.f_title = 'Task B'; FIELDS.f_dependsOn = 'A'; FIELDS.f_owner = '';
+                try { save(); } catch (e) {}
+                return String((T.st.tasks.find(t => t.id === 'B') || {}).dependsOn) === 'A'; })());
+    // Scoped to the CODE comment. The Rev 24 revision-log entry legitimately
+    // repeats the claim it made at the time; the log is append-only history.
+    ok('A-17: the code comment no longer claims a cycle is structurally impossible',
+       !/That is what\s+makes a dependency cycle structurally impossible/.test(main) &&
+       /corrects what this comment used to claim/.test(main));
+
+    // A-14: a record that has gone must refuse, not write to index -1.
+    T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [],
+      tasks: [{ id: 'gone', title: 'Here for now', status: 'Not Started', owner: '', priority: 'Medium', due: '', notes: '', category: '', dependsOn: '', sourceEventId: '', sourceEventTitle: '' }] });
+    clear(); openT('gone');
+    T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [], tasks: [] });
+    FIELDS.f_title = 'Edited after deletion'; FIELDS.f_owner = '';
+    try { save(); } catch (e) {}
+    ok('A-14: a task deleted under the open form refuses instead of writing index -1',
+       (T.st.tasks || []).length === 0 && !Object.prototype.hasOwnProperty.call(T.st.tasks, '-1'),
+       JSON.stringify(T.st.tasks));
+    ok('A-14: and says the record has gone', ALERTS.some(a => /no longer in shared OMS/i.test(a)), ALERTS.join(' | '));
+    ok('A-14: all three record branches capture the index rather than indexing blind',
+       !/ST\.events\[ST\.events\.findIndex\(x=>x\.id===id\)\]=o/.test(main) &&
+       !/ST\.sops\[ST\.sops\.findIndex\(x=>x\.id===id\)\]=o/.test(main) &&
+       !/ST\.tasks\[ST\.tasks\.findIndex\(x=>x\.id===id\)\]=o/.test(main));
+
+    // A-13: a category typed on a form that is then refused is not remembered.
+    sandbox.localStorage.removeItem('cao_oms_categories');
+    T.setST({ events: [], sops: [], people: [], notifications: [], assignmentHistory: [], tasks: [] });
+    clear();
+    const openEv = G('openEvModal');
+    if (typeof openEv === 'function') {
+      openEv();
+      FIELDS.f_title = ''; FIELDS.f_date = '';
+      FIELDS.f_cat = '__new__'; FIELDS.f_cat_new = 'Invented On A Refused Form';
+      try { save(); } catch (e) {}
+      ok('A-13: a refused event does not leave its new category behind',
+         !String(sandbox.localStorage.getItem('cao_oms_categories') || '').includes('Invented On A Refused Form'),
+         String(sandbox.localStorage.getItem('cao_oms_categories')));
+      clear(); openEv();
+      FIELDS.f_title = 'Real event'; FIELDS.f_date = '2026-10-01';
+      FIELDS.f_cat = '__new__'; FIELDS.f_cat_new = 'Kept Because It Saved';
+      try { save(); } catch (e) {}
+      ok('A-13: a saved event does remember it',
+         String(sandbox.localStorage.getItem('cao_oms_categories') || '').includes('Kept Because It Saved'),
+         String(sandbox.localStorage.getItem('cao_oms_categories')));
+      sandbox.localStorage.removeItem('cao_oms_categories');
+    }
+  }
+}
+
+console.log('\n# Rev 54: owners and notifications (A-05, A-06, A-10, A-15, A-16, A-18)');
+{
+  const fp = G('findPerson'), osh = G('ownerSelectHtml');
+  if (typeof fp === 'function') {
+    T.setST({ people: [{ id: 'gone-person', name: 'Gone Person', email: 'gone@x.org', active: false }] });
+    ok('A-05: a deactivated person is invisible to the default lookup', fp('Gone Person') === null);
+    ok('A-05: but RESOLUTION can find them', (fp('Gone Person', true) || {}).id === 'gone-person',
+       'otherwise every save of a task they still own prompts for an address already on file');
+    const up = G('upsertPerson');
+    if (typeof up === 'function') {
+      const again = up('Gone Person', 'gone@x.org', '');
+      ok('A-05: re-adding them revives the record rather than minting a duplicate id',
+         (T.st.people || []).length === 1 && (again || {}).id === 'gone-person',
+         JSON.stringify((T.st.people || []).map(p => p.id)));
+    }
+  }
+  if (typeof osh === 'function') {
+    T.setST({ people: [{ id: 'ari-ball', name: 'Ari Ball', email: 'a@x.org', active: true }] });
+    const blank = osh('');
+    ok('A-06: a new task opens on (unassigned), not on the first person in the directory',
+       /<option value="" selected>\(unassigned\)<\/option>/.test(blank.replace(/\s+selected/, ' selected')),
+       blank.slice(0, 160));
+    ok('A-06: an owned task still opens on its owner',
+       /<option selected>Ari Ball<\/option>/.test(osh('Ari Ball')));
+    ok('A-06: the directory list still offers only active people',
+       /p\.active!==false/.test(String(osh)));
+  }
+  const epo = G('ensurePersonForOwner');
+  if (typeof epo === 'function') {
+    T.setST({ people: [] });
+    ok('A-06: ensurePersonForOwner refuses an empty owner instead of prompting for nobody',
+       epo('') === null && epo('   ') === null && (T.st.people || []).length === 0);
+  }
+
+  const cnt = G('createNotificationForTask');
+  if (typeof cnt === 'function') {
+    T.setST({ tasks: [], notifications: [], assignmentHistory: [], people: [] });
+    cnt({ id: 'n1', title: 'Work', owner: 'Ari Ball', ownerEmail: 'a@x.org' },
+        { id: 'n1', title: 'Work', owner: '', ownerEmail: '' });
+    const n = T.st.notifications[0] || {};
+    ok('A-15: assigning an UNASSIGNED task is a new assignment, not a reassignment',
+       n.type === 'assignment_created', n.type);
+    ok('A-15: the subject says so too', /New assignment/.test(String(n.subject || '')), String(n.subject));
+    ok('A-15: and the first line of the body', /You have been assigned a new OMS task/.test(String(n.body || '')));
+    ok('A-15: the history records it as a first assignment',
+       (T.st.assignmentHistory[0] || {}).type === 'assignment_created');
+    T.setST({ tasks: [], notifications: [], assignmentHistory: [], people: [] });
+    cnt({ id: 'n2', title: 'Work', owner: 'Maggie Scirica', ownerEmail: 'm@x.org' },
+        { id: 'n2', title: 'Work', owner: 'Ari Ball', ownerEmail: 'a@x.org' });
+    ok('A-15: a genuine handover is still a reassignment',
+       (T.st.notifications[0] || {}).type === 'assignment_changed');
+  }
+
+  const mark = G('markNotificationSent');
+  if (typeof mark === 'function') {
+    T.setST({ tasks: [], people: [], notifications: [
+      { id: 'q1', type: 'due_reminder', status: 'sent_by_user', sentAt: '2026-09-01T10:00:00Z' }] });
+    mark('q1');
+    ok('A-16: Mark Sent on something already sent does not rewrite sentAt',
+       (T.st.notifications[0] || {}).sentAt === '2026-09-01T10:00:00Z',
+       'the queue recorded the last click rather than when the draft went out');
+  }
+
+  const stale = G('omsStaleDueReminders'), mkRem2 = G('createDueReminders');
+  if (typeof stale === 'function' && typeof mkRem2 === 'function') {
+    const T0 = G('TODAY');
+    const at = n => { const x = new Date(T0); x.setDate(x.getDate() + n);
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+    T.setST({ events: [], sops: [], people: [], notifications: [], tasks: [
+      { id: 'rr', title: 'Due soon', status: 'Not Started', due: at(1), owner: 'Ari Ball', ownerEmail: 'a@x.org' }] });
+    mkRem2(3);
+    ok('A-10: the first owner gets a reminder', T.st.notifications.length === 1);
+    const prev = { id: 'rr', owner: 'Ari Ball', ownerEmail: 'a@x.org' };
+    T.st.tasks[0].owner = 'Maggie Scirica'; T.st.tasks[0].ownerEmail = 'm@x.org';
+    const k = stale(T.st.tasks[0], prev);
+    ok('A-10: reassigning marks the old owner\'s unsent reminder stale', k === 1 &&
+       (T.st.notifications[0] || {}).status === 'stale', JSON.stringify(T.st.notifications[0] || {}).slice(0, 120));
+    ok('A-10: so the bell stops counting it',
+       (T.st.notifications || []).filter(n => n.status === 'pending').length === 0);
+    const made = mkRem2(3);
+    ok('A-10: and the NEW owner gets their own reminder', made === 1 &&
+       (T.st.notifications[0] || {}).recipientEmail === 'm@x.org',
+       'the old key had no recipient in it, so Remind called the job done and told nobody');
+    ok('A-10: the idempotency key now carries the recipient',
+       /String\(x\.recipientEmail\|\|''\)\.toLowerCase\(\)===String\(t\.ownerEmail\|\|''\)\.toLowerCase\(\)/.test(main));
+    ok('A-10: the queue explains a stale row rather than offering to send it',
+       /The task changed hands before this was sent/.test(String(G('openNotificationsModal') || '')));
+  }
+
+  const handoff2 = G('notifyDependentsOnCompletion');
+  if (typeof handoff2 === 'function') {
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], people: [], tasks: [
+      { id: 'p', title: 'Prerequisite', status: 'Retired' },
+      { id: 'd', title: 'Dependent', status: 'Not Started', dependsOn: 'p', owner: 'Ari Ball', ownerEmail: 'a@x.org' }] });
+    const made = handoff2(T.st.tasks[0], { status: 'In Progress' });
+    ok('A-18: RETIRING a prerequisite notifies its dependents too', made === 1, 'made=' + made);
+    const body = String((T.st.notifications[0] || {}).body || '');
+    ok('A-18: and says the work was withdrawn, not delivered',
+       /withdrawn, not delivered/.test(body), body.slice(0, 160));
+    ok('A-18: retiring something already Retired does not re-notify',
+       handoff2(T.st.tasks[0], { status: 'Retired' }) === 0);
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], people: [], tasks: [
+      { id: 'p', title: 'Prerequisite', status: 'Complete' },
+      { id: 'd', title: 'Dependent', status: 'Not Started', dependsOn: 'p', owner: 'Ari Ball', ownerEmail: 'a@x.org' }] });
+    handoff2(T.st.tasks[0], { status: 'In Progress' });
+    ok('A-18: completing still says now Complete',
+       /now Complete/.test(String((T.st.notifications[0] || {}).body || '')));
+  }
+}
+
+console.log('\n# Rev 54: categories, the Brief and the shell (R-04, A-12, C-08, C-15, C-16, C-10, C-13)');
+{
+  const ren = G('renameCategory'), sopCount = G('categorySopCount');
+  ok('R-04: categorySopCount exists', typeof sopCount === 'function');
+  if (typeof ren === 'function' && typeof sopCount === 'function') {
+    T.setST({ events: [], tasks: [], people: [], notifications: [],
+      sops: [{ id: 's1', process: 'Only an SOP uses this', category: 'Orphan Cat', owner: '', notes: '' }] });
+    ok('A-12: a category used only by procedures is counted', sopCount('Orphan Cat') === 1);
+    const moved = ren('Orphan Cat', 'Renamed Cat');
+    ok('R-04: renaming moves the SOP', moved === 1 && T.st.sops[0].category === 'Renamed Cat',
+       'a SOP-only category reported "No records changed" and was stranded');
+    ok('R-04: the dialog has a SOPs column',
+       /<th style="text-align:right">SOPs<\/th>/.test(main));
+    ok('R-04: and the confirmation quotes the SOP count',
+       /' SOP'\+\(ks===1\?'':'s'\)/.test(main));
+  }
+
+  const brief = String(G('rBrief') || '');
+  ok('C-08: the Weekly Brief spans a multi-day event that began before the week',
+     /calEventEnd\(e\)>=wkS&&dp\(e\.date\)<=wkE/.test(brief),
+     'the filter tested the start date only, so a Saturday-to-Tuesday board meeting was missing all week');
+  ok('C-08: and still excludes OOO and Retired', /e\.category!=='EB OOO'&&!isRetired\(e\)/.test(brief));
+  ok('C-15: paging the Brief no longer writes to shared state',
+     !/ST\.briefWeek=this\.value;save\(\)/.test(main),
+     'a viewer was refused, and everyone else queued a sync, merely to look at another week');
+  ok('C-15: briefWeekView alone drives the view',
+     /onchange="briefWeekView=this\.value;rBrief\(\)"/.test(main));
+  ok('C-15: briefWeekStart still reads the stored default',
+     /ST\.briefWeek/.test(String(G('briefWeekStart') || '')));
+
+  ok('C-16: the nav highlight reads the button, not an array position',
+     /b\.dataset&&b\.dataset\.tab===t/.test(String(G('go') || '')),
+     'hiding Admin and Import shifted every index for a non-admin session');
+  ok('C-16: every nav button carries its tab name',
+     (html.match(/data-tab="/g) || []).length === 10, (html.match(/data-tab="/g) || []).length + ' found');
+
+  ok('C-10: calItemClick is gone', typeof G('calItemClick') !== 'function' && !/function calItemClick\(/.test(main));
+  ok('C-10: calItemDelete is gone', typeof G('calItemDelete') !== 'function' && !/function calItemDelete\(/.test(main));
+  ok('C-10: cycleRob is gone', typeof G('cycleRob') !== 'function' && !/function cycleRob\(/.test(main),
+     'it is the single-click cycle Rev 14 removed because it WAS the OMS-003 defect');
+  ok('C-10: and buildSeed and omsRemoveSignIn are NOT', /function buildSeed\(/.test(main) && /function omsRemoveSignIn\(/.test(main));
+
+  ok('C-13: the guide hero no longer quotes a version number',
+     !/Version 1\.4\.0 adds individual OMS sign-in/.test(html),
+     'the badge is the version; a number written into prose has no owner');
+}
+
+console.log('\n# Rev 54: intake rows can be removed, and the form says so (A-08)');
+{
+  const ab = G('abSec');
+  if (typeof ab === 'function') {
+    T.setST({ gw: [], assignments: [], agendas: [], fyis: [], events: [], tasks: [], sops: [],
+      people: [], notifications: [], assignmentHistory: [], rob: [],
+      incoming: [{ id: 'i1', n: '1', item: 'An incoming thing', source: 'Email', status: 'New', link: '', input: '' }],
+      forReview: [{ id: 'f1', n: '1', item: 'A review thing', inputNeeded: 'x', requestedBy: 'Ari', link: '', notes: '' }],
+      board: [{ id: 'b1', n: '1', boardName: 'Advocate', item: 'A board thing', status: 'New', link: '', notes: '' }],
+      deadlines: [{ id: 'd1', n: '1', deadline: 'A deadline', owner: '', dueDate: '2026-10-01', status: 'New', link: '', notes: '' }] });
+    const pairs = [['inc', 'incoming', 'i1'], ['fr', 'forReview', 'f1'], ['brd', 'board', 'b1'], ['dl', 'deadlines', 'd1']];
+    for (const [type, coll, id] of pairs) {
+      const out = ab('X', type);
+      ok('A-08: ' + type + ' rows offer Delete',
+         out.indexOf("delItem('" + coll + "','" + id + "')") !== -1, out.slice(0, 200));
+      ok('A-08: ' + type + ' Delete sits inside a no-print wrapper so a viewer never sees it',
+         /<span class="no-print"><button class="btn br2 bxs" onclick="delItem\('/.test(out));
+    }
+    const del = G('delItem');
+    ok('A-08: delItem handles these collections', typeof del === 'function');
+    if (typeof del === 'function') {
+      try { del('incoming', 'i1'); } catch (e) { /* renderAll needs more DOM than this harness has */ }
+      ok('A-08: and actually removes the row', (T.st.incoming || []).length === 0);
+    }
+  }
+  ok('A-08: the intake form no longer implies the status can be changed later',
+     /the status set here is the status the row keeps/.test(html),
+     'there is no edit dialog for these four sections, and the hint used to suggest triage would follow');
+}
+
+console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
+{
+  ok('C-09: the overlay is announced as a dialog',
+     /class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle"/.test(html));
+  ok('C-09: chips and pills are focusable and named as buttons',
+     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length === 11,
+     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length + ' found');
+  ok('C-09: one delegated handler gives them Enter and Space',
+     /t\.closest\('\.chip,\.pill'\)/.test(main) && /e\.key!=='Enter'&&e\.key!==' '/.test(main),
+     'chips are rebuilt by innerHTML on every render, so per-element handlers would not survive');
+  ok('C-09: Escape still closes first', /if\(e\.key==='Escape'\)\{closeModal\(\);return\}/.test(main));
+  ok('C-09: openModal moves focus into the dialog',
+     /b\.querySelector\('input,select,textarea,button,\[href\]'\)/.test(String(G('openModal') || '')));
+  ok('C-09: and closeModal gives it back',
+     /_mcReturnFocus/.test(String(G('closeModal') || '')));
+  ok('C-09: every label in the record forms names its control',
+     (() => { const forms = main.slice(main.indexOf('function openEvModal'), main.indexOf('function saveModal'));
+              return !/<label>(?!&nbsp;)[^<>]*<\/label><(?:input|select|textarea)\b[^>]*\bid="/.test(forms); })(),
+     'an unlabeled input is read out as nothing at all');
+  const leave = G('omsLeaveForm');
+  ok('A-20: omsLeaveForm exists', typeof leave === 'function');
+  ok('A-20: the three cross-links out of an open dialog go through it',
+     (main.match(/omsLeaveForm\(function\(\)\{/g) || []).length === 3,
+     (main.match(/omsLeaveForm\(function\(\)\{/g) || []).length + ' found');
+  ok('A-20: one delegated listener marks the open form dirty',
+     /\['input','change'\]\.forEach\(ev=>document\.addEventListener\(ev,/.test(main) &&
+     /MC\)MC\.dirty=true/.test(main));
+  ok('A-20: opening and closing both clear it',
+     /MC=\{type,id,dirty:false\}/.test(main) && /if\(MC\)MC\.dirty=false/.test(main));
+  if (typeof leave === 'function' && typeof G('openModal') === 'function') {
+    G('openModal')('T', '<div></div>', 'ev', null);
+    ctx.__T.fn('MC').dirty = true;
+    let ran = false;
+    leave(() => { ran = true; });
+    ok('A-20: confirm() answers yes in this harness, so the cross-link proceeds and the flag clears',
+       ran === true && ctx.__T.fn('MC').dirty === false);
+  }
 }
 
 // ---------------------------------------------------------------- 5. release metadata

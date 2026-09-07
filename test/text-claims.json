@@ -50,8 +50,8 @@
   {
     "id": "category-rename-moves-tasks",
     "code": "(ST.tasks||[]).forEach(x=>{if(x&&String(x.category||'')===from)",
-    "requires_text": "every event AND task",
-    "why": "Rev 23 made renaming a category move tasks too. The tooltip still said it updated every event, understating the blast radius of a merge."
+    "requires_text": "every event, task AND SOP",
+    "why": "Rev 23 made renaming a category move tasks too. The tooltip still said it updated every event, understating the blast radius of a merge. Rev 54 (R-04) added the SOP loop and repointed this at the wider sentence; the tasks loop it guards is unchanged."
   },
   {
     "id": "checklist-export-is-described",
@@ -605,5 +605,123 @@
       "adminDeactivate"
     ],
     "why": "Rev 52. The block has to happen on the Deactivate button's own path, not only on the separate Disable sign-in control."
+  },
+  {
+    "id": "rev54-rename-moves-sops",
+    "code": "(ST.sops||[]).forEach(x=>{if(x&&String(x.category||'')===from)",
+    "requires_text": "every event, task AND SOP",
+    "why": "R-04. SOPs joined the shared category list in Rev 49 and renameCategory did not follow, so a category used only by procedures reported 'No records changed' and every SOP on it was stranded on a name nothing offered. The binding is the loop itself, in the same shape as the tasks one, so removing it from either side fails."
+  },
+  {
+    "id": "rev54-sop-count-is-shown-before-a-rename",
+    "code": "function categorySopCount(",
+    "requires_text": "shows all three counts before you confirm",
+    "reachable_from": [
+      "openCategoriesModal",
+      "saveModal"
+    ],
+    "why": "A-12. Counting is only useful where the decision is made. The dialog shows the three counts and the confirmation quotes them, so this must be reachable from the render AND from the save that asks."
+  },
+  {
+    "id": "rev54-unassigned-is-offered",
+    "text": "A task can be left (unassigned).",
+    "requires_code": "<option value=\"\" ${current?'':'selected'}>(unassigned)</option>",
+    "why": "A-06. The Owner list had no empty entry, so a new task opened pre-assigned to whoever sorted first and saving it queued a notification telling them so. The guide may promise (unassigned) only while the option exists."
+  },
+  {
+    "id": "rev54-unassigned-owner-creates-nobody",
+    "code": "const person=ownerName?ensurePersonForOwner(ownerName):null;",
+    "requires_text": "nobody is emailed, until you choose them",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "why": "A-06. The other half: an empty owner must not send the directory looking for a person, or the save prompts for an email address for nobody."
+  },
+  {
+    "id": "rev54-task-cycle-is-refused",
+    "text": "Two tasks cannot wait on each other.",
+    "requires_code": "if(_pre&&String(_pre.dependsOn||'')===String(id))",
+    "why": "A-17. Rev 24's comment called a cycle structurally impossible. It was creatable in two saves and left both tasks Blocked for ever. The guide may state the refusal only while the refusal is there."
+  },
+  {
+    "id": "rev54-retiring-a-prerequisite-tells-people",
+    "code": "withdrawn, not delivered",
+    "requires_text": "Retiring a prerequisite releases whatever was waiting on it",
+    "reachable_from": [
+      "notifyDependentsOnCompletion"
+    ],
+    "why": "A-18. isBlocked has treated Retired as closed since Rev 24, but only Complete fired the handoff, so retiring a prerequisite unblocked its dependents silently. The wording has to say withdrawn rather than complete, because the reader acts on them differently."
+  },
+  {
+    "id": "rev54-stale-reminders-are-explained",
+    "code": "function omsStaleDueReminders(",
+    "requires_text": "unsent reminders",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "why": "A-10. A pending reminder addressed to the previous owner drafts an email telling somebody to finish work that is no longer theirs. Retiring those is only correct if it happens on the save that reassigns, hence reachable_from."
+  },
+  {
+    "id": "rev54-retired-is-a-badge-not-a-strikeout",
+    "text": "marked with a Retired badge",
+    "requires_code": "bret\">Retired",
+    "why": "R-10. The Status hint and two guide lines said a Retired record is shown 'struck through'. Only .bret carries the line-through; the row never did. The claim is now tied to the badge that is actually drawn."
+  },
+  {
+    "id": "rev54-retired-drops-out-of-the-linked-counts",
+    "code": "active:rows.length-retired",
+    "requires_text": "drops out of the counts on the Dashboard, the Calendars and the Weekly Brief",
+    "reachable_from": [
+      "eventTaskStats"
+    ],
+    "why": "A-19. The calendar pill and the list row divided by a total that included Retired work, so retiring made an event look LESS complete - the opposite of what the Status control promises."
+  },
+  {
+    "id": "rev54-calendar-views-remember-every-filter",
+    "text": "the <strong>Standing only</strong> and <strong>Out of office</strong> filters",
+    "requires_code": "cad:calCadence,ooo:calShowOoo",
+    "why": "C-05. A calendar view saved three of the five filters on screen. Applying it reproduced the source and layout and quietly showed everything, which looks like it worked."
+  },
+  {
+    "id": "rev54-one-task-status-list",
+    "code": "function omsTaskStatusOrder(",
+    "requires_text": "the filter and the Status box on the form are drawn from one list",
+    "reachable_from": [
+      "rTasks"
+    ],
+    "why": "C-11. OMS_TASK_STATUSES was declared in Rev 17 and read by nothing; the chips and the form each carried their own copy, which is how a status comes to exist on one and not the other."
+  },
+  {
+    "id": "rev54-sop-review-due-is-on-the-tooltip",
+    "code": "id=\"f_sop_review\"",
+    "requires_text": "review due date",
+    "reachable_from": [
+      "openSopModal"
+    ],
+    "why": "R-11. The Add and Edit SOP tooltips listed title, owner, link and notes - the field set as it stood before Rev 46 added Review due and Rev 49 added Category and Status. Same drift the task tooltips had, three revisions of it."
+  },
+  {
+    "id": "rev54-sop-status-is-on-the-tooltip",
+    "code": "omsStatusField('f_sop_status'",
+    "requires_text": "category, status, link",
+    "reachable_from": [
+      "openSopModal"
+    ],
+    "why": "R-11. Retirement reached the SOP form in Rev 49 and no tooltip mentioned it, so the control existed and nothing pointed at it."
+  },
+  {
+    "id": "rev54-intake-status-is-fixed-at-entry",
+    "text": "the status set here is the status the row keeps",
+    "requires_code": "delItem('incoming','${x.id}')",
+    "why": "A-08. Incoming, For Review, Board Commitments and Upcoming Deadlines are create-only: Rev 54 adds Delete but no edit dialog, so the form must stop implying the status can be moved on later. The claim is bound to the delete control that makes 'delete and re-add' actually possible."
+  },
+  {
+    "id": "rev54-intake-rows-can-be-deleted",
+    "code": "<span class=\"no-print\"><button class=\"btn br2 bxs\" onclick=\"delItem('",
+    "requires_text": "delete the row and add it again",
+    "reachable_from": [
+      "abSec"
+    ],
+    "why": "A-08. A control on a card nobody renders is the Rev 34 shape all over again; the delete must be inside abSec, which is what draws all four sections."
   }
 ]
