@@ -1477,10 +1477,10 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
     T.setST(savedST);
   }
   const prev = String(G('showImportPreview') || '');
-  // Rev 53 (R-13). The same bit was called Cadence here, Recurring on the
-  // event form and Standing on the calendar chips. The user-facing word is
-  // Standing everywhere; the stored field is still `recurring`.
-  ok('OMS-041: the import preview shows a Standing column', /<th>Standing<\/th>/.test(prev));
+  // Rev 53 (R-13) unified three words onto Standing. Rev 68 moved the whole
+  // vocabulary to Recurring on Hossam's instruction - one word still, and now
+  // the same word as the stored field, which has always been `recurring`.
+  ok('OMS-041: the import preview shows a Recurring column', /<th>Recurring<\/th>/.test(prev));
   ok('OMS-041: and computes it through omsCadenceFor', /omsCadenceFor\(/.test(prev));
   ok('OMS-041: every row can be marked or unmarked in the preview',
      /toggleImportCadence\(/.test(prev) && typeof G('toggleImportCadence') === 'function');
@@ -1706,10 +1706,15 @@ console.log('\n# The suggested password can be dictated (OMS-049)');
   ok('OMS-015: and still on the SOP form', /f_note_add/.test(sopModal));
 
   // EB OOO is availability, not a meeting.
+  // Rev 68. Hossam removed the filter: out-of-office entries are ordinary
+  // events now. Nothing may filter them out, and no chip may offer to.
   const rcal = String(G('omsCalItems') || '');
-  ok('out of office is hidden from the calendar by default',
-     /calShowOoo/.test(rcal) && /'EB OOO'/.test(rcal));
-  ok('and there is a control to bring it back', /calShowOoo=!calShowOoo/.test(String(G('rCal') || '')));
+  ok('Rev 68: nothing filters out-of-office entries off the calendar any more',
+     !/calShowOoo/.test(rcal) && !/String\(e\.category\|\|''\)!=='EB OOO'/.test(main));
+  ok('Rev 68: ...while the Dashboard 30-day counter still excludes them, which is a different question',
+     /e\.category!=='EB OOO'/.test(String(G('rDash') || '')));
+  ok('Rev 68: and the Out of office chip is gone from the toolbar',
+     !/>Out of office<\/div>/.test(html) && !/calShowOoo/.test(main));
 }
 
 const suggest = G('omsSuggestedPassword');
@@ -2840,10 +2845,11 @@ console.log('\n# Rev 63: every grid exports what it shows, and the Key Dates per
   ok('Rev 63: ...and says which filter it followed',
      /Status: Complete/.test(T.fn('globalThis.__xl.wb.s[1].a.find(r=>r[0]==="Filter and sort")[1]')));
   T.fn("taskSt='All';ST.events=[{id:'e1',title:'Gamma',date:'2030-03-03',source:'Ari',category:'Cabinet',recurring:true}," +
-       "{id:'e2',title:'Hidden',date:'2030-03-04',source:'Maggie',category:'EB OOO'}];calSrc='overlay';calShowOoo=false;calCadence='all';calSearch='';omsExportCalendar()");
+       "{id:'e2',title:'Hidden',date:'2030-03-04',source:'Maggie',category:'EB OOO'}];calSrc='overlay';calCadence='all';calSearch='';omsExportCalendar()");
   const cal = T.fn('globalThis.__xl');
-  ok('Rev 63: the Calendar export holds exactly the rows the screen filters (two task due dates, one event, no hidden OOO)',
-     cal.wb.s[0].a.length === 4 && !cal.wb.s[0].a.some(r => r[3] === 'Hidden'), cal.wb.s[0].a.length + ' rows');
+  // Rev 68: the OOO row is no longer hidden, so it exports with the rest.
+  ok('Rev 63 / Rev 68: the Calendar export holds every row the screen shows, out-of-office included',
+     cal.wb.s[0].a.length === 5 && cal.wb.s[0].a.some(r => r[3] === 'Hidden'), cal.wb.s[0].a.length + ' rows');
   ok('Rev 63: ...sorted by date with a Standing column', cal.wb.s[0].a[1][3] === 'Alpha' && cal.wb.s[0].a[3][3] === 'Gamma' && cal.wb.s[0].a[3][4] === 'Yes');
   T.fn("calSrc='ari';omsExportCalendar()");
   ok('Rev 63: ...and follows the source chip', T.fn('globalThis.__xl.wb.s[0].a.length') === 2, T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
@@ -2977,6 +2983,60 @@ console.log('\n# Rev 67: a search box survives being typed into');
      /getElementById\('gsres'\)/.test(String(G('omsGlobalSearchInput'))) &&
      !/renderAll\(|rTasks\(|rCal\(|rSOPs\(/.test(String(G('omsGlobalSearchInput'))));
 }
+// ---- Rev 68: the calendar filters, and categories you can add and remove.
+console.log('\n# Rev 68: out of office is ordinary, Standing is Recurring, categories can be added and deleted');
+{
+  T.fn("globalThis.__s68=JSON.stringify({e:ST.events,t:ST.tasks,s:ST.sops})");
+  T.fn("ST.events=[{id:'o1',title:'Dean away',date:'2030-04-01',category:'EB OOO',source:'Ari'}," +
+       "{id:'o2',title:'Cabinet',date:'2030-04-02',category:'Cabinet',source:'Ari',recurring:true}];" +
+       "ST.tasks=[];ST.sops=[];calSrc='overlay';calCadence='all';calSearch=''");
+  const ids = () => G('omsCalItems')().map(e => e.id);
+  ok('Rev 68: an out-of-office entry is on the calendar like any other event',
+     ids().includes('o1'), ids().join(','));
+  T.fn("calCadence='standing'");
+  ok('Rev 68: the Recurring chip still filters on the stored recurring flag',
+     ids().join(',') === 'o2', ids().join(','));
+  T.fn("calCadence='oneoff'");
+  ok('Rev 68: ...and One-off still shows the rest, out-of-office included', ids().join(',') === 'o1');
+  T.fn("calCadence='all'");
+  ok('Rev 68: the chip reads Recurring and keeps its circular arrow',
+     /&#8635; Recurring<\/div>/.test(html) && !/>&#8635; Standing only<\/div>/.test(html));
+
+  // Categories: add, reject a duplicate, delete only what nothing uses.
+  T.fn("ST.events=[{id:'c1',title:'x',date:'2030-05-05',category:'Cabinet'}];ST.tasks=[];ST.sops=[]");
+  T.fn("localStorage.removeItem('cao_oms_categories');_cgKey=null");
+  const has = c => G('eventCategories')().includes(c);
+  T.fn("document.getElementById('cat_new').value='Board Retreat';omsAddCategory()");
+  ok('Rev 68: a category can be added from the Categories dialog', has('Board Retreat'));
+  const before = G('eventCategories')().length;
+  T.fn("document.getElementById('cat_new').value='board retreat';omsAddCategory()");
+  ok('Rev 68: ...and a duplicate is refused whatever its case',
+     G('eventCategories')().length === before && ALERTS.some(a => /already on the list/.test(a)));
+  const idxOf = c => G('eventCategories')().indexOf(c);
+  T.fn('omsDeleteCategory(' + idxOf('Board Retreat') + ')');
+  ok('Rev 68: an unused category can be deleted', !has('Board Retreat'));
+  ALERTS.length = 0;
+  T.fn("ST.events=[{id:'c2',title:'y',date:'2030-05-06',category:'Away Day'}];_cgKey=null");
+  ok('Rev 68: a category is on the list because a record carries it', has('Away Day'));
+  T.fn('omsDeleteCategory(' + idxOf('Away Day') + ')');
+  ok('Rev 68: ...and deleting one still in use is refused, with the counts',
+     has('Away Day') && ALERTS.some(a => /still used by 1 event/.test(a)), ALERTS.join(' | '));
+  ALERTS.length = 0;
+  T.fn("localStorage.setItem('cao_oms_categories',JSON.stringify(['Board Meeting']));_cgKey=null");
+  T.fn('omsDeleteCategory(' + idxOf('Board Meeting') + ')');
+  ok('Rev 68: a built-in is never deletable, however it got onto the custom list',
+     has('Board Meeting') && ALERTS.some(a => /built-in/.test(a)), ALERTS.join(' | '));
+  ok('Rev 68: the add box keeps focus, so the guard has nothing to find',
+     /omsRerenderKeepingCaret\('cat_new',omsRefreshCatSection\)/.test(main));
+  T.fn("localStorage.removeItem('cao_oms_categories');_cgKey=null");
+  T.fn("const __x=JSON.parse(globalThis.__s68);ST.events=__x.e;ST.tasks=__x.t;ST.sops=__x.s;_dirty.clear()");
+  ALERTS.length = 0;
+}
+ok('Rev 68: the Categories dialog offers Add and Delete, and says what each does',
+   /id="cat_new"/.test(html) && /onclick="omsAddCategory\(\)"/.test(html)
+   && /onclick="omsDeleteCategory\(\$\{i\}\)"/.test(html)
+   && /take effect at once and need no Save/.test(html));
+
 ok('Rev 65: the header carries the search box', /<input class="srch gsin" id="gsearch"/.test(html) && /id="gsres" class="gsres" hidden/.test(html));
 
 ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phone neither scrolls sideways nor zooms on focus',
@@ -3263,14 +3323,15 @@ console.log('\n# Workbook importer (Rev 53)');
   // ---- R-09: the chip counted rows that would never be written
   ok('R-09: the Standing chip counts selected rows only',
      /const standingCount=rows\.filter\(r=>\(r\._status==='new'\|\|r\._status==='force'\)&&omsCadenceFor/.test(prevSrc));
-  ok('R-09: and the chip renders that count', /\$\{standingCount\} Standing/.test(prevSrc));
+  ok('R-09: and the chip renders that count', /\$\{standingCount\} Recurring/.test(prevSrc));
 
   // ---- R-13: one word for one bit
-  ok('R-13: the preview column is Standing', /<th>Standing<\/th>/.test(prevSrc) && !/<th>Cadence<\/th>/.test(prevSrc));
-  ok('R-13: the event form label is Standing', /<label>Standing<\/label>/.test(prose53));
-  ok('R-13: no interface text calls the bit a Recurring event any more',
-     !/Recurring event/.test(prose53) && !/marked <em>Recurring<\/em>/.test(prose53),
-     'the stored field is still `recurring`; the word on screen is Standing');
+  ok('R-13 / Rev 68: the preview column is Recurring',
+     /<th>Recurring<\/th>/.test(prevSrc) && !/<th>Cadence<\/th>/.test(prevSrc) && !/<th>Standing<\/th>/.test(prevSrc));
+  ok('R-13 / Rev 68: the event form label is Recurring', /<label>Recurring<\/label>/.test(prose53));
+  ok('R-13 / Rev 68: one word still, and no screen calls this bit Standing any more',
+     !/<em>Standing<\/em>/.test(prose53) && !/Standing meeting/.test(html) && !/&#8635; Standing/.test(html),
+     'Rev 53 unified on Standing; Rev 68 moved the same single word to Recurring');
   ok('R-13: the stored field name is unchanged', /id="f_recurring"/.test(html) && /e\.recurring/.test(main));
 
   T.setST(savedST53);
@@ -3362,22 +3423,26 @@ console.log('\n# Rev 54: sorting, statuses and saved views (C-04, C-11, C-05, R-
 
   const vf = G('omsViewFilters');
   if (typeof vf === 'function') {
-    T.fn("calCadence='standing'"); T.fn('calShowOoo=true');
+    T.fn("calCadence='standing'");
     const f = vf('cal');
     ok('C-05: a saved calendar view records the cadence filter', f.cad === 'standing', JSON.stringify(f));
-    ok('C-05: and the out-of-office filter', f.ooo === true);
-    T.fn("calCadence='all'"); T.fn('calShowOoo=false');
+    // Rev 68 removed the out-of-office filter, so a view no longer carries one.
+    ok('Rev 68: and no longer records an out-of-office filter', f.ooo === undefined, JSON.stringify(f));
+    T.fn("calCadence='all'");
     const av = G('omsApplyView'), wv = G('omsWriteViews');
     if (typeof av === 'function' && typeof wv === 'function') {
       T.setST({ events: [], tasks: [], sops: [], people: [] });
-      wv([{ id: 'cv', scope: 'cal', name: 'Standing', filters: { src: 'ari', view: 'grid', q: '', cad: 'standing', ooo: true } }]);
+      wv([{ id: 'cv', scope: 'cal', name: 'Recurring', filters: { src: 'ari', view: 'grid', q: '', cad: 'standing', ooo: true } }]);
       av('cv');
-      ok('C-05: applying it restores both', T.fn('calCadence') === 'standing' && T.fn('calShowOoo') === true,
-         T.fn('calCadence') + '/' + T.fn('calShowOoo'));
+      ok('C-05: applying it restores the cadence filter', T.fn('calCadence') === 'standing', T.fn('calCadence'));
+      // A view saved before Rev 68 still carries ooo. It must be ignored, not
+      // resurrect a filter the screen no longer has.
+      ok('Rev 68: an ooo key on an older saved view is ignored, not honored',
+         T.fn("typeof calShowOoo") === 'undefined');
       wv([{ id: 'cv2', scope: 'cal', name: 'Old', filters: { src: 'ari', view: 'grid', q: '' } }]);
       av('cv2');
       ok('C-05: a view saved before this shipped restores to "show everything"',
-         T.fn('calCadence') === 'all' && T.fn('calShowOoo') === false);
+         T.fn('calCadence') === 'all');
       wv([]);
     }
   }
@@ -3797,7 +3862,7 @@ console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
   ok('C-09: the overlay is announced as a dialog',
      /class="modal" role="dialog" aria-modal="true" aria-labelledby="mtitle"/.test(html));
   ok('C-09: chips and pills are focusable and named as buttons',
-     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length === 13,
+     (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length === 12,
      (html.match(/<div tabindex="0" role="button" class="(chip|pill)/g) || []).length + ' found');
   ok('C-09: one delegated handler gives them Enter and Space',
      /t\.closest\('\.chip,\.pill'\)/.test(main) && /e\.key!=='Enter'&&e\.key!==' '/.test(main),

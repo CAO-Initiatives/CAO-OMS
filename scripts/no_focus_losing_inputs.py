@@ -41,7 +41,7 @@ anything.
 
     python3 scripts/no_focus_losing_inputs.py [--file PATH]
 
---file is honoured, not ignored. `scripts/text_claims.py` once accepted a path
+--file is honored, not ignored. `scripts/text_claims.py` once accepted a path
 and silently checked the repository's own artifact instead, so a negative
 control run against a deliberately broken copy reported it clean. The negative
 suite for this check drives it entirely through --file, so the same mistake
@@ -65,21 +65,65 @@ TYPING_TYPES = {"", "text", "search", "email", "url", "tel", "password", "number
 HANDLER_ATTRS = ("oninput", "onkeyup", "onkeypress", "onkeydown", "onchange")
 
 
-def blank_out(src, strings=True, comments=True):
-    """Blank string literals and comments so brace matching is not fooled.
+_RE_KEYWORDS = ("return", "typeof", "case", "in", "of", "new", "delete",
+                "void", "do", "else", "yield", "await", "throw")
 
-    The artifact is minified in places and full of template literals holding
-    `${...}`, so a naive scan for a function's closing brace walks off the end
-    of it. Characters become spaces rather than disappearing, so every offset
-    in the result still lines up with the original text.
+
+def _regex_keyword(out):
+    """True when the text emitted so far ends in a keyword a regex may follow."""
+    tail = "".join(out[-12:])
+    stripped = tail.rstrip()
+    for kw in _RE_KEYWORDS:
+        if stripped.endswith(kw):
+            before = stripped[:-len(kw)]
+            if not before or not (before[-1].isalnum() or before[-1] in "_$."):
+                return True
+    return False
+
+
+def blank_out(src, strings=True, comments=True):
+    """Blank string literals, template literals, regexes and comments.
+
+    Everything is replaced by spaces rather than removed, so every offset in
+    the result still lines up with the original text and a span measured here
+    can be applied to the original.
+
+    THIS HAS TO BE A REAL STATE MACHINE, and two rounds of wrong answers proved
+    why. The artifact is one minified HTML file whose renderers are built from
+    NESTED template literals - `...${canEdit?`<td>...`:''}...` - and it is full
+    of regexes like .replace(/'/g,'&#39;'). A naive scanner fails on both:
+
+      * the inner backtick reads as the END of the outer template, so the rest
+        of the markup is parsed as code;
+      * the apostrophe inside /'/g opens a phantom string that swallows
+        everything up to the next apostrophe.
+
+    Either one desynchronises brace counting, and brace counting is how this
+    check decides which renderer draws which control. Measured on the real
+    artifact before the fix: esc() brace-matched to 63,173 characters instead
+    of about 150, and three unrelated functions all "ended" at the same offset.
+    The check still reported zero findings, which is the dangerous part - it
+    was not looking at what it claimed to be looking at.
+
+    Interpolation braces (`${` and its closing `}`) are blanked too, so they
+    never disturb the depth count; real braces inside an interpolation are
+    balanced and cancel out on their own.
     """
     out = []
     i, n = 0, len(src)
-    quote = None
-    comment = None
+    prev = ""                      # last significant char, for regex-vs-division
+    comment = None                 # "line" | "block" | None
+    quote = None                   # "'" | '"' | None  (simple strings)
+    stack = [["code", 0]]          # frames: ["code", brace_depth] | ["tmpl", 0]
+
+    def emit(text, blank):
+        out.append((" " * len(text)) if blank else text)
+
     while i < n:
         c = src[i]
         nxt = src[i + 1] if i + 1 < n else ""
+        top = stack[-1]
+
         if comment == "line":
             out.append(c if c == "\n" else " ")
             if c == "\n":
@@ -95,44 +139,117 @@ def blank_out(src, strings=True, comments=True):
             out.append("\n" if c == "\n" else " ")
             i += 1
             continue
-        if quote:
+
+        if quote is not None:
             if c == "\\":
-                out.append(src[i:i + 2] if not strings else "  ")
+                emit(src[i:i + 2], strings)
                 i += 2
                 continue
             if c == quote:
                 quote = None
-                out.append(c if not strings else " ")
+                emit(c, strings)
+                prev = c
                 i += 1
                 continue
-            out.append(c if not strings else ("\n" if c == "\n" else " "))
+            out.append(("\n" if c == "\n" else " ") if strings else c)
             i += 1
             continue
+
+        if top[0] == "tmpl":
+            if c == "\\":
+                emit(src[i:i + 2], strings)
+                i += 2
+                continue
+            if c == "`":
+                stack.pop()
+                emit(c, strings)
+                prev = "`"
+                i += 1
+                continue
+            if c == "$" and nxt == "{":
+                stack.append(["code", 0])
+                out.append("  ")          # the interpolation braces never count
+                prev = "{"
+                i += 2
+                continue
+            out.append(("\n" if c == "\n" else " ") if strings else c)
+            i += 1
+            continue
+
+        # ---- code context ----
         if c == "/" and nxt == "/":
-            if not comments:
-                out.append(c)
-                i += 1
+            if comments:
+                comment = "line"
+                out.append("  ")
+                i += 2
                 continue
-            comment = "line"
-            out.append("  ")
-            i += 2
-            continue
-        if c == "/" and nxt == "*":
-            if not comments:
-                out.append(c)
-                i += 1
+        elif c == "/" and nxt == "*":
+            if comments:
+                comment = "block"
+                out.append("  ")
+                i += 2
                 continue
-            comment = "block"
-            out.append("  ")
-            i += 2
-            continue
-        if c in "'\"`":
+        elif c == "/" and (prev == "" or prev in "(,=:[!&|?{};+-*%~^<>"
+                           or _regex_keyword(out)):
+            j, cls, closed = i + 1, False, False
+            while j < n:
+                d = src[j]
+                if d == "\\":
+                    j += 2
+                    continue
+                if d == "[":
+                    cls = True
+                elif d == "]":
+                    cls = False
+                elif d == "/" and not cls:
+                    closed = True
+                    break
+                elif d == "\n":
+                    break              # a regex literal cannot span a line
+                j += 1
+            if closed:
+                j += 1                                   # closing slash
+                while j < n and src[j].isalpha():        # flags
+                    j += 1
+                out.append(" " * (j - i))
+                prev = "/"
+                i = j
+                continue
+
+        if c in "'\"":
             quote = c
-            out.append(c if not strings else " ")
+            emit(c, strings)
+            prev = c
             i += 1
             continue
+        if c == "`":
+            stack.append(["tmpl", 0])
+            emit(c, strings)
+            prev = "`"
+            i += 1
+            continue
+        if c == "{":
+            top[1] += 1
+            out.append(c)
+            prev = c
+            i += 1
+            continue
+        if c == "}":
+            if top[1] == 0 and len(stack) > 1:
+                stack.pop()               # closes ${...}, back into the template
+                out.append(" ")           # blanked: never counted
+            else:
+                top[1] -= 1
+                out.append(c)
+            prev = c
+            i += 1
+            continue
+
         out.append(c)
+        if not c.isspace():
+            prev = c
         i += 1
+
     return "".join(out)
 
 

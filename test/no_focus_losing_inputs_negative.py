@@ -145,6 +145,29 @@ check("a renderer using replaceChildren instead of innerHTML is still caught", T
        "document.getElementById('thing').replaceChildren(d); }\n"
        + HELPER + "\n</script></body></html>"))
 
+# 12. THE TOKENIZER TRAP, PART ONE: nested template literals. Every renderer in
+#     the artifact is built this way. A scanner that treats the inner backtick
+#     as the end of the outer template parses the rest of the markup as code,
+#     brace matching desynchronises, and the containment test silently reports
+#     on the wrong function. Rev 67 shipped with exactly that defect.
+check("a defect hidden inside a nested template literal is still caught", True,
+      ("<!doctype html><html><body><div id=\"thing\"></div><script>\n"
+       "function rThing(){ const on=true; document.getElementById('thing').innerHTML = "
+       "`<div>${on?`<span>x</span>`:''}"
+       "<input class=\"srch\" id=\"s\" oninput=\"q=this.value;rThing()\">`; }\n"
+       + HELPER + "\n</script></body></html>"))
+
+# 13. THE TOKENIZER TRAP, PART TWO: a regex holding a quote. esc() in the real
+#     artifact is .replace(/'/g,'&#39;'), and the apostrophe inside the pattern
+#     opened a phantom string that swallowed 63,000 characters, so unrelated
+#     functions appeared to contain each other.
+check("a defect after a regex containing an apostrophe is still caught", True,
+      ("<!doctype html><html><body><div id=\"thing\"></div><script>\n"
+       "function esc(s){return String(s).replace(/'/g,'&#39;').replace(/\"/g,'&quot;')}\n"
+       "function rThing(){ document.getElementById('thing').innerHTML = "
+       "`<input class=\"srch\" id=\"s\" oninput=\"q=this.value;rThing()\">`; }\n"
+       + HELPER + "\n</script></body></html>"))
+
 print("\n# Sound artifacts that must NOT be caught")
 
 # 11. The correct shape: the helper, with this control's own id.

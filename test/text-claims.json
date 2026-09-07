@@ -44,8 +44,8 @@
   {
     "id": "recurring-flag-is-described",
     "code": "id=\"f_recurring\"",
-    "requires_text": "Tick Standing for anything that repeats",
-    "why": "Rev 17 added the recurring flag; nothing described it. Rev 53 (R-13) renamed the user-facing word: the same bit was called Cadence on the Add Event tooltip, Recurring on the event form and Standing on the calendar chips, on adjacent screens. The stored field is still `recurring` - only the word people read changed - so the binding still guards the control and now guards the agreed word with it."
+    "requires_text": "Tick Recurring for anything that repeats",
+    "why": "Rev 17 added the recurring flag; nothing described it. Rev 53 (R-13) renamed the user-facing word: the same bit was called Cadence on the Add Event tooltip, Recurring on the event form and Standing on the calendar chips, on adjacent screens. The stored field is still `recurring` - only the word people read changed - so the binding still guards the control and now guards the agreed word with it. Rev 68: Hossam moved the user-facing word from Standing to Recurring, which is also the name of the stored field."
   },
   {
     "id": "category-rename-moves-tasks",
@@ -155,8 +155,8 @@
   {
     "id": "cadence-filter-is-described",
     "code": "calCadence==='standing'",
-    "requires_text": "Standing only",
-    "why": "OMS-041. A filter nobody can find is a filter that was not built, and this one reuses an existing field rather than adding a visible one, so nothing else hints it exists."
+    "requires_text": "the meetings marked <em>Recurring</em> on the event",
+    "why": "OMS-041. A filter nobody can find is a filter that was not built, and this one reuses an existing field rather than adding a visible one, so nothing else hints it exists. Rev 68 renamed the chip to Recurring and kept the stored token, so the binding now guards the new word against the unchanged code."
   },
   {
     "id": "sop-review-date-is-described",
@@ -309,13 +309,13 @@
   },
   {
     "id": "standing-is-one-word-across-the-importer",
-    "code": "<th>Standing</th>",
-    "requires_text": "shows a <strong>Standing</strong> column",
-    "why": "Rev 53 (R-13). The same bit was called Cadence in the import preview, Recurring on the event form and Standing on the calendar chips - three words for one boolean on adjacent screens. The guide now names the column, so the column and the sentence naming it fail together.",
+    "code": "<th>Recurring</th>",
+    "requires_text": "shows a <strong>Recurring</strong> column",
+    "why": "Rev 53 (R-13). The same bit was called Cadence in the import preview, Recurring on the event form and Standing on the calendar chips - three words for one boolean on adjacent screens. The guide now names the column, so the column and the sentence naming it fail together. Rev 68 moved the single word from Standing to Recurring; still one word, still bound.",
     "reachable_from": [
       "showImportPreview"
     ],
-    "symbol": "<th>Standing</th>"
+    "symbol": "<th>Recurring</th>"
   },
   {
     "id": "no-blanket-unchanged-claim-without-the-check",
@@ -396,12 +396,6 @@
     "reachable_from": [
       "OMS_QUEUE_SYNC"
     ]
-  },
-  {
-    "id": "ooo-hidden-is-described",
-    "code": "calShowOoo",
-    "requires_text": "Out-of-office entries are hidden by default",
-    "why": "Rev 35 hides fifteen existing calendar rows. Hiding data without saying so is how people conclude the calendar is wrong."
   },
   {
     "id": "confirmation-means-applied",
@@ -617,10 +611,9 @@
     "code": "function categorySopCount(",
     "requires_text": "shows all three counts before you confirm",
     "reachable_from": [
-      "openCategoriesModal",
-      "saveModal"
+      "omsCatSectionHtml"
     ],
-    "why": "A-12. Counting is only useful where the decision is made. The dialog shows the three counts and the confirmation quotes them, so this must be reachable from the render AND from the save that asks."
+    "why": "A-12. Counting is only useful where the decision is made. The dialog shows the three counts and the confirmation quotes them, so this must be reachable from the render AND from the save that asks. Rev 68 moved the row building out of openCategoriesModal into omsCatSectionHtml so the table can be redrawn after an add or a delete; the count must still be in the rows."
   },
   {
     "id": "rev54-unassigned-is-offered",
@@ -678,9 +671,9 @@
   },
   {
     "id": "rev54-calendar-views-remember-every-filter",
-    "text": "the <strong>Standing only</strong> and <strong>Out of office</strong> filters",
-    "requires_code": "cad:calCadence,ooo:calShowOoo",
-    "why": "C-05. A calendar view saved three of the five filters on screen. Applying it reproduced the source and layout and quietly showed everything, which looks like it worked."
+    "text": "the <strong>Recurring</strong> filter",
+    "requires_code": "cad:calCadence",
+    "why": "C-05. A calendar view saved three of the five filters on screen. Applying it reproduced the source and layout and quietly showed everything, which looks like it worked. Rev 68 removed the out-of-office filter, so a saved view records the cadence chip alone."
   },
   {
     "id": "rev54-one-task-status-list",
@@ -1212,5 +1205,37 @@
     "text": "after a choice the keyboard stays on the control you just used",
     "requires_code": "omsRerenderKeepingCaret('task-owner',rTasks)",
     "why": "Rev 67. The filter dropdowns redraw the screen that draws them, so without the helper a keyboard user is returned to the top of the document after every choice. The Owner filter is the representative site; gate check 15 holds the rest."
+  },
+  {
+    "id": "rev68-ooo-not-filtered",
+    "text": "Out-of-office entries appear like any other event",
+    "forbids_code": "String(e.category||'')!=='EB OOO'",
+    "why": "Rev 68. Hossam removed the filter on 7 Sept 2026. The guide says out-of-office entries are ordinary events, so no filter may quietly exclude them again. Bound to the CALENDAR's own expression: the Dashboard's 30-day counter still excludes out-of-office days on purpose, because fifteen days of absence are not fifteen meetings."
+  },
+  {
+    "id": "rev68-category-add",
+    "text": "use <strong>Add a category</strong> there",
+    "requires_code": "function omsAddCategory(",
+    "why": "Rev 68. The guide promises adding a category from the Categories dialog; this is the function behind it."
+  },
+  {
+    "id": "rev68-category-add-reachable",
+    "code": "function omsAddCategory(",
+    "requires_text": "A category you add is offered on your own computer straight away",
+    "reachable_from": [
+      "omsCatSectionHtml"
+    ],
+    "symbol": "omsAddCategory",
+    "why": "Rev 68. Existence is not reachability: the control must be on the dialog that the sentence names, and the sentence must keep admitting that a new category is local until a record uses it."
+  },
+  {
+    "id": "rev68-category-delete-reachable",
+    "code": "function omsDeleteCategory(",
+    "requires_text": "It only removes one that nothing is using",
+    "reachable_from": [
+      "omsCatSectionHtml"
+    ],
+    "symbol": "omsDeleteCategory",
+    "why": "Rev 68. Delete is deliberately narrow, because the list is rebuilt from the records themselves; the guide states the limit and this binds it to the control."
   }
 ]
