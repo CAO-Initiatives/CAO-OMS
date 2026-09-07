@@ -1148,9 +1148,9 @@
   },
   {
     "id": "rev65-templates-sync",
-    "code": "'assignmentHistory','taskTemplates']",
+    "code": "'assignmentHistory','taskTemplates'",
     "requires_text": "Task templates create the standard tasks",
-    "why": "Rev 65. OMS_MAP drops nothing here, but a collection missing from OMS_COLLECTIONS emits no operations at all; the guide promise depends on the collection being synced."
+    "why": "Rev 65. OMS_MAP drops nothing here, but a collection missing from OMS_COLLECTIONS emits no operations at all; the guide promise depends on the collection being synced. Rev 70 appended categories after taskTemplates, so the binding drops the closing bracket and guards the entry itself."
   },
   {
     "id": "rev65-templates-save-button",
@@ -1221,12 +1221,12 @@
   {
     "id": "rev68-category-add-reachable",
     "code": "function omsAddCategory(",
-    "requires_text": "A category you add is offered on your own computer straight away",
+    "requires_text": "A category you add is saved to shared OMS",
     "reachable_from": [
       "omsCatSectionHtml"
     ],
     "symbol": "omsAddCategory",
-    "why": "Rev 68. Existence is not reachability: the control must be on the dialog that the sentence names, and the sentence must keep admitting that a new category is local until a record uses it."
+    "why": "Rev 68. Existence is not reachability: the control must be on the dialog that the sentence names, and the sentence must keep admitting that a new category is local until a record uses it. Rev 70 made the collection shared, so the sentence the control is bound to changed with it."
   },
   {
     "id": "rev68-category-delete-reachable",
@@ -1237,5 +1237,27 @@
     ],
     "symbol": "omsDeleteCategory",
     "why": "Rev 68. Delete is deliberately narrow, because the list is rebuilt from the records themselves; the guide states the limit and this binds it to the control."
+  },
+  {
+    "id": "rev70-categories-are-synced",
+    "text": "A category you add is saved to shared OMS",
+    "requires_code": "'assignmentHistory','taskTemplates','categories']",
+    "why": "Rev 70 (FAB-47, DEC-032). A collection missing from OMS_COLLECTIONS emits no operations in either direction while the interface reports success - the gw and rob defect. The guide promises everybody sees a new category, so the collection must be in the sync set."
+  },
+  {
+    "id": "rev70-share-a-local-category",
+    "code": "function omsShareCategory(",
+    "requires_text": "press <strong>Share</strong> to give it to the office",
+    "reachable_from": [
+      "omsCatSectionHtml"
+    ],
+    "symbol": "omsShareCategory",
+    "why": "Rev 70. A category added before the shared collection existed sits in one browser, and only that person can see it to promote it. The button must be on the dialog the sentence names."
+  },
+  {
+    "id": "rev70-rename-moves-the-record",
+    "text": "renames the shared category itself, in one save",
+    "requires_code": "(ST.categories||[]).forEach(x=>{if(x&&String(x.name||'').trim()===from){x.name=to;catTouched=true}});",
+    "why": "Rev 70. Renaming a category nothing uses must still persist; the old code returned early when no record changed, so the rename was lost. This line and the catTouched guard are the promise."
   }
 ]

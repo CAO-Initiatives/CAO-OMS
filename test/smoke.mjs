@@ -344,8 +344,9 @@ if (typeof writeV === 'function' && typeof listV === 'function' &&
 }
 // Rev 65 added taskTemplates, a collection the consolidator and the operation
 // schema had carried since the data side was built; sixteen is the new count.
+// Rev 70 added categories, the shared category vocabulary. Seventeen now.
 ok('saved views add no synced collection',
-   COLLECTIONS.length === 16 && !COLLECTIONS.some(c => /^(saved)?views$/i.test(c)),
+   COLLECTIONS.length === 17 && !COLLECTIONS.some(c => /^(saved)?views$/i.test(c)),
    'Rev 18 owns the sync surface; Rev 17 must not widen it');
 
 // ---------------------------------------------------------------- 10. Auto-extending horizon (item 5)
@@ -473,8 +474,11 @@ if (typeof renameCat === 'function' && typeof catCount === 'function') {
   ok('renaming an unused category changes nothing', renameCat('Nothing At All', 'X') === 0);
   ok('a blank source is a no-op', renameCat('', 'X') === 0);
 }
+// Rev 70 added the shared-record rename and its explanation between the loops
+// and the save, so the window widened. The assertion's point is unchanged: the
+// rename must go through save(), not write state directly.
 ok('a rename saves through the normal path, not a direct state write',
-   /function renameCategory[\s\S]{0,900}?save\(\)/.test(main),
+   /function renameCategory[\s\S]{0,1600}?save\(\)/.test(main),
    'events all carry ids, so OMS_DIFF emits ordinary update operations');
 ok('the categories manager is its own dialog, opened from the toolbar',
    /openCategoriesModal\(\)/.test(main) && /t==='cats'/.test(main));
@@ -3053,6 +3057,69 @@ ok('Rev 69: ...and the guide sentence about an annual gala says recurring',
    /not a recurring meeting\.<\/li>/.test(html) || /one-off, not a recurring meeting/.test(html));
 ok('Rev 69: ...while the internal filter token and the importer word list are untouched',
    /calCadence==='standing'/.test(main) && /standing\|recurring/.test(main));
+
+// ---- Rev 70: categories are shared canonical data.
+console.log('\n# Rev 70: a category one person adds is everybody\'s');
+{
+  T.fn("globalThis.__s70=JSON.stringify({e:ST.events,t:ST.tasks,s:ST.sops,c:ST.categories||null})");
+  T.fn("ST.events=[];ST.tasks=[];ST.sops=[];ST.categories=[];localStorage.removeItem('cao_oms_categories');_cgKey=null;_dirty.clear()");
+  const cats = () => G('eventCategories')();
+  T.fn("document.getElementById('cat_new').value='Board Retreat';omsAddCategory()");
+  ok('Rev 70: Add writes a record into the shared collection, not localStorage',
+     T.st.categories.length === 1 && T.st.categories[0].name === 'Board Retreat'
+     && T.fn("localStorage.getItem('cao_oms_categories')") === null,
+     JSON.stringify(T.st.categories));
+  ok('Rev 70: ...with an id of its own, so it can be synced like any record',
+     /^cat-board-retreat$/.test(T.st.categories[0].id), T.st.categories[0].id);
+  ok('Rev 70: ...and the collection is marked dirty so the save actually goes',
+     T.fn("_dirty.has('categories')") === true);
+  ok('Rev 70: ...and it appears on the list', cats().includes('Board Retreat'));
+
+  // A rename is an update to the record AND a rewrite of what uses it.
+  T.fn("ST.tasks=[{id:'k1',title:'x',category:'Board Retreat'}];_dirty.clear()");
+  const moved = G('renameCategory')('Board Retreat', 'Board Away Day');
+  ok('Rev 70: a rename rewrites the records carrying the old name', moved === 1, moved + ' moved');
+  ok('Rev 70: ...and renames the shared record in place, keeping its id',
+     T.st.categories[0].name === 'Board Away Day' && T.st.categories[0].id === 'cat-board-retreat',
+     JSON.stringify(T.st.categories[0]));
+  // The case the old code lost: nothing uses it, so k is 0 and it returned early.
+  T.fn("ST.tasks=[];_dirty.clear()");
+  const none = G('renameCategory')('Board Away Day', 'Away Day');
+  ok('Rev 70: renaming a category NOTHING uses still persists',
+     none === 0 && T.st.categories[0].name === 'Away Day', none + '/' + T.st.categories[0].name);
+  ok('Rev 70: ...and still queues a save', T.fn('_dirty.size') > 0);
+
+  // Delete removes the shared record for everybody.
+  T.fn("_dirty.clear()");
+  T.fn('omsDeleteCategory(' + G('eventCategories')().indexOf('Away Day') + ')');
+  ok('Rev 70: deleting a shared category removes the record',
+     T.st.categories.length === 0 && !cats().includes('Away Day'), JSON.stringify(T.st.categories));
+  ok('Rev 70: ...and marks the collection dirty', T.fn("_dirty.has('categories')") === true);
+
+  // The legacy per-browser list is still read, and can be promoted.
+  T.fn("ST.categories=[];localStorage.setItem('cao_oms_categories',JSON.stringify(['Old Local']));_cgKey=null;_dirty.clear()");
+  ok('Rev 70: a category added before this shipped is still on the list', cats().includes('Old Local'));
+  T.fn('omsShareCategory(' + G('eventCategories')().indexOf('Old Local') + ')');
+  ok('Rev 70: Share promotes it to the shared collection',
+     T.st.categories.length === 1 && T.st.categories[0].name === 'Old Local');
+  ok('Rev 70: ...and takes it out of this browser, so it cannot come back twice',
+     JSON.parse(T.fn("localStorage.getItem('cao_oms_categories')") || '[]').length === 0);
+  ok('Rev 70: ...and it appears exactly once on the list',
+     cats().filter(c => c === 'Old Local').length === 1);
+
+  // A viewer may not change the shared vocabulary.
+  T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'};_dirty.clear();ST.categories=[]");
+  T.fn("document.getElementById('cat_new').value='Sneaky';omsAddCategory()");
+  ok('Rev 70: a read-only account cannot add a shared category',
+     T.st.categories.length === 0 && T.fn('_dirty.size') === 0);
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+  T.fn("const __y=JSON.parse(globalThis.__s70);ST.events=__y.e;ST.tasks=__y.t;ST.sops=__y.s;if(__y.c)ST.categories=__y.c;else delete ST.categories;localStorage.removeItem('cao_oms_categories');_cgKey=null;_dirty.clear()");
+  ALERTS.length = 0;
+}
+ok('Rev 70: categories sync like every other collection',
+   /'assignmentHistory','taskTemplates','categories'\]/.test(main));
+ok('Rev 70: the dialog says where each category lives, and offers Share for a local one',
+   /onclick="omsShareCategory\(\$\{i\}\)"/.test(html) && /this computer only/.test(html));
 
 ok('Rev 68: the Categories dialog offers Add and Delete, and says what each does',
    /id="cat_new"/.test(html) && /onclick="omsAddCategory\(\)"/.test(html)
