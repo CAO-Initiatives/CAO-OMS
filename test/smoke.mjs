@@ -1913,7 +1913,7 @@ console.log('\n# The reconciler, executed (Rev 36)');
   const build = () => {
     let now = 0, seq = 0;
     const timers = new Map();
-    const calls = { state: 0, operation: 0 };
+    const calls = { state: 0, operation: 0, posted: [] };
     const flush = async () => { for (let k = 0; k < 50; k++) await Promise.resolve(); };
     // Microtasks first: OMS_QUEUE_SYNC chains off a resolved promise, so on the
     // first call no timer exists yet and a scan-first loop would return at once.
@@ -1941,13 +1941,13 @@ console.log('\n# The reconciler, executed (Rev 36)');
       localStorage: store(), sessionStorage: store(),
       location: { href: 'https://x.invalid/oms.html', replace: noop, search: '' },
       navigator: { userAgent: 'smoke' }, crypto: { subtle: {}, getRandomValues: a => a },
-      fetch: async (url) => {
+      fetch: async (url, o) => {
         if (String(url).endsWith('/api/state')) {
           calls.state++;
           return { ok: true, status: 200, headers: { get: () => null },
                    text: async () => JSON.stringify({ state: canonical, revision: canonical.revision, schemaVersion: 2 }) };
         }
-        calls.operation++;
+        calls.operation++; try { calls.posted.push(JSON.parse(o.body)); } catch (_) {}
         return { ok: true, status: 202, text: async () => '{"accepted":true,"operationId":"x"}' };
       },
     };
@@ -2276,6 +2276,78 @@ console.log('\n# The reconciler, executed (Rev 36)');
     await h3.advance(200000);
     ok('nor while a batch is still with the gateway',
        h3.run(`ST.tasks[0].title`) === 'Original', h3.run(`ST.tasks[0].title`));
+  }
+
+  // ---- Rev 50: the four sync-path defects the Fable 5.1 QA pass reproduced.
+  // Each of these FAILED against Rev 49 (docs/review-2026-09-06-qa-security/repro-sync-path.mjs).
+  // save() is not called here because the harness's advance() awaits each timer
+  // callback and the debounce callback returns the whole sync chain; the two
+  // lines that save() runs are inlined instead.
+  {
+    // Case 1. Boot must not leave every collection dirty, or the idle watch never runs.
+    const h = build();
+    h.run(`ST={schemaVersion:2,revision:75,tasks:[{id:'t1',title:'Original',_version:1}],people:[{id:'p1',name:'P',email:'p@x',active:true}],notifications:[],assignmentHistory:[]};
+           OMS_BASE=JSON.parse(JSON.stringify(ST));_dirty.clear();OMS_SYNC_READY=false;
+           migrateNotificationsState();if(!OMS_DIFF().length)_dirty.clear();OMS_SYNC_READY=true;`);
+    ok('Rev 50: a boot migration that changed nothing leaves nothing dirty', h.run(`_dirty.size`) === 0, h.run(`_dirty.size`) + ' dirty');
+    ok('Rev 50: the boot sequence carries that guard', /migrateNotificationsState\(\);[\s\S]{0,700}?if\(!OMS_DIFF\(\)\.length\)_dirty\.clear\(\);OMS_SYNC_READY=true;/.test(main));
+    ok('Rev 50: ...so the idle watch may run on a fresh session', h.run(`OMS_WATCH_SAFE()`) === true);
+  }
+  {
+    // Case 2. Different fields on one record must merge, not conflict.
+    const h = build();
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Colleague title', notes: '', _version: 2 }] });
+    h.run(`ST.tasks[0].notes='';OMS_BASE=JSON.parse(JSON.stringify(ST));ST.tasks[0].notes='My note';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(3000);
+    ok('Rev 50: an edit to a different field is posted, not refused', h.calls.operation === 1, h.calls.operation + ' posted');
+    ok('Rev 50: ...rebased onto the current version', h.run(`OMS_INFLIGHT&&OMS_INFLIGHT.ops[0].baseVersion`) === 2);
+    ok('Rev 50: ...and the note is still on screen', h.run(`ST.tasks[0].notes`) === 'My note');
+    h.setCanonical({ schemaVersion: 2, revision: 77, tasks: [{ id: 't1', title: 'Colleague title', notes: 'My note', _version: 3 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 50: ...and the merged record is adopted as Connected', h.run(`globalThis.__b`) === 'Connected' && h.run(`ST.tasks[0].title`) === 'Colleague title', h.run(`globalThis.__b`));
+  }
+  {
+    // Case 2b. The same field IS still a conflict, and the error names it.
+    const h = build();
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Colleague title', _version: 2 }] });
+    h.run(`ST.tasks[0].title='Mine';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(3000); try { await p; } catch (_) {}
+    ok('Rev 50: the same field is still refused', h.calls.operation === 0 && h.run(`ST.tasks[0].title`) === 'Colleague title', h.calls.operation + ' posted');
+    ok('Rev 50: ...and the conflict toast names the field', /\(title\)/.test(JSON.stringify(h.run(`globalThis.__t||[]`))), JSON.stringify(h.run(`globalThis.__t`)));
+  }
+  {
+    // Case 3. An edit made while a save is confirming is kept and sent, not overwritten.
+    const h = build();
+    h.run(`ST.tasks.push({id:'t2',title:'Second',_version:1});OMS_BASE=JSON.parse(JSON.stringify(ST));`);
+    h.setCanonical({ schemaVersion: 2, revision: 75, tasks: [{ id: 't1', title: 'Original', _version: 1 }, { id: 't2', title: 'Second', _version: 1 }] });
+    h.run(`ST.tasks[0].title='Edit A';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p1 = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(1500);
+    h.run(`ST.tasks[1].title='Edit B';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p2 = h.run(`OMS_QUEUE_SYNC()`);
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Edit A', _version: 2 }, { id: 't2', title: 'Second', _version: 1 }] });
+    await h.advance(5000);
+    ok('Rev 50: the edit typed during confirmation survives adoption', h.run(`ST.tasks[1].title`) === 'Edit B', JSON.stringify(h.run(`ST.tasks[1].title`)));
+    ok('Rev 50: ...is marked dirty for the next sync', h.run(`_dirty.has('tasks')`) === true);
+    h.setCanonical({ schemaVersion: 2, revision: 77, tasks: [{ id: 't1', title: 'Edit A', _version: 2 }, { id: 't2', title: 'Edit B', _version: 2 }] });
+    await h.advance(30000); try { await p1; await p2; } catch (_) {}
+    ok('Rev 50: ...and both edits reached the gateway', h.calls.operation === 2, h.calls.operation + ' posted');
+    ok('Rev 50: ...ending Connected', h.run(`globalThis.__b`) === 'Connected', h.run(`globalThis.__b`));
+  }
+  {
+    // Case 4. One stale record must not discard the rest of the batch.
+    const h = build();
+    h.setCanonical({ schemaVersion: 2, revision: 76, tasks: [{ id: 't1', title: 'Colleague title', _version: 2 }] });
+    h.run(`ST.tasks[0].title='Stale';ST.tasks.push({id:'n1',title:'New one'});OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
+    const p = h.run(`OMS_QUEUE_SYNC()`);
+    await h.advance(3000);
+    ok('Rev 50: the stale record is reverted to canonical', h.run(`ST.tasks[0].title`) === 'Colleague title', h.run(`ST.tasks[0].title`));
+    ok('Rev 50: ...but the new record is kept', h.run(`ST.tasks.some(t=>t.id==='n1')`) === true);
+    h.setCanonical({ schemaVersion: 2, revision: 77, tasks: [{ id: 't1', title: 'Colleague title', _version: 2 }, { id: 'n1', title: 'New one', _version: 1 }] });
+    await h.advance(30000); try { await p; } catch (_) {}
+    ok('Rev 50: ...and posted on its own', h.calls.posted.some(o => o.action === 'create' && o.entityId === 'n1'), h.calls.operation + ' posted');
   }
 
   // ---- operations that never reached the gateway must not promise self-healing

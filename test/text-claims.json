@@ -415,5 +415,34 @@
     "code": "integrity=\"sha384-",
     "requires_text": "the one piece of code OMS loads from anywhere but itself",
     "why": "Rev 45. SheetJS is the only external script, it runs with full access to the page including the session token in sessionStorage, and it was loaded with no integrity attribute - so a compromise of that CDN or of DNS in front of it would have read every signed-in user's credential silently. If the pin is ever dropped, the sentence saying the spreadsheet reader is verified must go with it. Recompute the hash when the version changes; the browser refuses to run anything that does not match."
+  },
+  {
+    "id": "rev50-edits-during-confirmation-are-kept",
+    "text": "is kept and sent as soon as that one lands",
+    "requires_code": "function OMS_REBASE_LOCAL(",
+    "why": "Rev 50. The guide had said 'the first one is not lost', which was true, while a DIFFERENT edit made during confirmation was overwritten by wholesale adoption and reported as Save successful. The sentence now promises the replay; this binds it to the function that performs it."
+  },
+  {
+    "id": "rev50-rebase-is-reachable-from-both-adoption-paths",
+    "code": "function OMS_REBASE_LOCAL(",
+    "symbol": "OMS_REBASE_LOCAL",
+    "requires_text": "everything else in the same save still goes through",
+    "reachable_from": [
+      "OMS_SYNC_ONCE",
+      "OMS_HANDLE_CONFLICT"
+    ],
+    "why": "Rev 50. Existence is not reachability: the replay has to run on the confirmed-save path AND the conflict path, or one of them still discards work. Orphan it from either and this fails."
+  },
+  {
+    "id": "rev50-field-level-merge-is-real-on-the-client",
+    "text": "as long as they touch different fields",
+    "requires_code": "op.baseVersion=currentVersion;continue",
+    "why": "Rev 44 wrote this sentence while OMS_ASSERT_CURRENT refused any update whose record version had moved at all, so the consolidator's field-level merge was unreachable in the ordinary case. This binds the promise to the rebase that makes it true."
+  },
+  {
+    "id": "rev50-idle-watch-can-run-on-a-fresh-session",
+    "text": "looks for new shared work about once a minute",
+    "requires_code": "if(!OMS_DIFF().length)_dirty.clear();OMS_SYNC_READY=true;",
+    "why": "Rev 44's idle refresh was blocked for the life of every session by the boot migration's save() leaving all collections dirty. Live-verified 6 Sept 2026. The promise is only true with this guard in the boot sequence."
   }
 ]

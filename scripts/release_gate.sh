@@ -103,7 +103,14 @@ if git rev-parse --verify --quiet "$BASE" >/dev/null && git cat-file -e "$BASE:$
   ADDED=$(git diff "$BASE" -- "$OMS" | grep -c "^+" || true)
   echo "      (added lines in $OMS vs $BASE: $ADDED)"
 
-  if [ "$ADDED" -gt 5 ]; then
+  # Rev 50 (R-01). This threshold was 5: any change adding five lines or fewer
+  # was classed cosmetic and skipped checks 7 and 8. Rev 47 - a real release
+  # that removed two false promises from the interface - added four lines and
+  # went through with the guide, badge and rev-log checks all skipped. There
+  # is no cosmetic change to a Dean-facing production artifact; the rule in
+  # CLAUDE.md is that every change bumps the badge, appends the log and
+  # touches the guide, and the gate now enforces the rule as written.
+  if [ "$ADDED" -gt 0 ]; then
     # ---------- 7. User Guide touched ----------
     # Guide-specific selectors ONLY. The old gate accepted the bare words
     # Admin, Import, Tasks and Navigation:, which any unrelated edit satisfies.
@@ -140,8 +147,8 @@ PY
       pass "8b OMS_REV_LOG appended (rev $BASEREV -> $TOPREV)"
     fi
   else
-    skip "7 User Guide check (cosmetic change, $ADDED added lines)"
-    skip "8 version and rev-log bump (cosmetic change)"
+    skip "7 User Guide check ($OMS unchanged since $BASE)"
+    skip "8 version and rev-log bump ($OMS unchanged since $BASE)"
   fi
 else
   skip "7 and 8 (base ref $BASE unavailable)"
