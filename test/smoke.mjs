@@ -3096,16 +3096,8 @@ console.log('\n# Rev 70: a category one person adds is everybody\'s');
      T.st.categories.length === 0 && !cats().includes('Away Day'), JSON.stringify(T.st.categories));
   ok('Rev 70: ...and marks the collection dirty', T.fn("_dirty.has('categories')") === true);
 
-  // The legacy per-browser list is still read, and can be promoted.
-  T.fn("ST.categories=[];localStorage.setItem('cao_oms_categories',JSON.stringify(['Old Local']));_cgKey=null;_dirty.clear()");
-  ok('Rev 70: a category added before this shipped is still on the list', cats().includes('Old Local'));
-  T.fn('omsShareCategory(' + G('eventCategories')().indexOf('Old Local') + ')');
-  ok('Rev 70: Share promotes it to the shared collection',
-     T.st.categories.length === 1 && T.st.categories[0].name === 'Old Local');
-  ok('Rev 70: ...and takes it out of this browser, so it cannot come back twice',
-     JSON.parse(T.fn("localStorage.getItem('cao_oms_categories')") || '[]').length === 0);
-  ok('Rev 70: ...and it appears exactly once on the list',
-     cats().filter(c => c === 'Old Local').length === 1);
+  // Rev 70's Share button and the per-browser list it promoted from were both
+  // removed in Rev 71; the drain that replaced them is tested in the Rev 71 block.
 
   // A viewer may not change the shared vocabulary.
   T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'};_dirty.clear();ST.categories=[]");
@@ -3116,10 +3108,82 @@ console.log('\n# Rev 70: a category one person adds is everybody\'s');
   T.fn("const __y=JSON.parse(globalThis.__s70);ST.events=__y.e;ST.tasks=__y.t;ST.sops=__y.s;if(__y.c)ST.categories=__y.c;else delete ST.categories;localStorage.removeItem('cao_oms_categories');_cgKey=null;_dirty.clear()");
   ALERTS.length = 0;
 }
+// ---- Rev 71: the browser stops holding categories at all.
+console.log('\n# Rev 71: a category is canonical, and nothing lives in the browser');
+{
+  T.fn("globalThis.__s71=JSON.stringify({e:ST.events,t:ST.tasks,s:ST.sops,c:ST.categories||null})");
+  T.fn("ST.events=[];ST.tasks=[];ST.sops=[];ST.categories=[];_cgKey=null;_dirty.clear();OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+  const cats = () => G('eventCategories')();
+
+  // A name left in the old browser store is no longer READ into the list...
+  T.fn("localStorage.setItem('cao_oms_categories',JSON.stringify(['Legacy Local']));_cgKey=null");
+  ok('Rev 71: the browser list no longer feeds the category list', !cats().includes('Legacy Local'));
+
+  // ...it is drained into canonical once, and the key is removed.
+  const moved = G('omsMigrateLocalCategories')();
+  ok('Rev 71: the drain moves it into the shared collection', moved === 1 && T.st.categories.length === 1
+     && T.st.categories[0].name === 'Legacy Local', JSON.stringify(T.st.categories));
+  ok('Rev 71: ...and it appears on the list again, now shared', cats().includes('Legacy Local'));
+  ok('Rev 71: ...and the browser key is gone', T.fn("localStorage.getItem('cao_oms_categories')") === null);
+  ok('Rev 71: ...and the save is queued', T.fn("_dirty.has('categories')") === true);
+
+  // Running twice must not duplicate anything, and must not write when idle.
+  T.fn("_dirty.clear()");
+  ok('Rev 71: a second run moves nothing and writes nothing',
+     G('omsMigrateLocalCategories')() === 0 && T.fn('_dirty.size') === 0 && T.st.categories.length === 1);
+
+  // A name already known is dropped rather than duplicated.
+  T.fn("localStorage.setItem('cao_oms_categories',JSON.stringify(['Legacy Local','Cabinet']));_cgKey=null;_dirty.clear()");
+  ok('Rev 71: names already shared or built-in are discarded, not re-added',
+     G('omsMigrateLocalCategories')() === 0 && T.st.categories.length === 1
+     && T.fn("localStorage.getItem('cao_oms_categories')") === null);
+
+  // A viewer must never write, but the key still goes.
+  T.fn("OMS_USER={role:'viewer',displayName:'A Viewer'};ST.categories=[];_cgKey=null;_dirty.clear()");
+  T.fn("localStorage.setItem('cao_oms_categories',JSON.stringify(['Viewer Local']))");
+  ok('Rev 71: a read-only account writes nothing during the drain',
+     G('omsMigrateLocalCategories')() === 0 && T.st.categories.length === 0 && T.fn('_dirty.size') === 0);
+  ok('Rev 71: ...but the browser copy is still removed',
+     T.fn("localStorage.getItem('cao_oms_categories')") === null);
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'}");
+
+  // A category typed on a form is canonical too, not a note in this browser.
+  T.fn("ST.categories=[];_cgKey=null;_dirty.clear()");
+  ok('Rev 71: a new category from a form creates a canonical record',
+     G('omsEnsureCategory')('Invented On A Form') === true
+     && T.st.categories.length === 1 && T.st.categories[0].name === 'Invented On A Form');
+  ok('Rev 71: ...and asking twice does not duplicate it',
+     G('omsEnsureCategory')('Invented On A Form') === false && T.st.categories.length === 1);
+  ok('Rev 71: ...and a built-in is never duplicated as a record',
+     G('omsEnsureCategory')('Cabinet') === false && T.st.categories.length === 1);
+  ok('Rev 71: ...and it never touches browser storage',
+     T.fn("localStorage.getItem('cao_oms_categories')") === null);
+
+  T.fn("const __z=JSON.parse(globalThis.__s71);ST.events=__z.e;ST.tasks=__z.t;ST.sops=__z.s;if(__z.c)ST.categories=__z.c;else delete ST.categories;localStorage.removeItem('cao_oms_categories');_cgKey=null;_dirty.clear()");
+  ALERTS.length = 0;
+}
+// Scoped to DEFINITIONS, not mentions: a comment explaining what was removed
+// legitimately names the thing, and an unscoped search flags its own history.
+ok('Rev 71: nothing writes a category into browser storage any more',
+   !/localStorage\.setItem\(OMS_CATS_KEY/.test(main)
+   && !/function omsRememberCat\(/.test(main) && !/function omsForgetCat\(/.test(main)
+   && !/function omsCustomCats\(/.test(main));
+ok('Rev 71: ...and the only remaining read of the old key is the one-shot drain',
+   (main.match(/localStorage\.getItem\(OMS_CATS_KEY/g) || []).length === 1
+   && /function omsLegacyLocalCats\(/.test(main));
+ok('Rev 71: the three form branches create a canonical record instead',
+   (main.match(/omsEnsureCategory\(_(cat|sopCat|tcat)New\)/g) || []).length === 3,
+   (main.match(/omsEnsureCategory\(_(cat|sopCat|tcat)New\)/g) || []).length + ' found');
+ok('Rev 71: the drain runs at boot, after the role is known',
+   /OMS_APPLY_ROLE_UI\(\);[^]{0,240}?omsMigrateLocalCategories\(\)/.test(main));
+ok('Rev 71: the Share button and the local label are gone with the store',
+   !/function omsShareCategory\(/.test(main) && !/onclick="omsShareCategory/.test(html)
+   && /const where=CC\[c\]\?'built-in':shared\?'shared':'in use';/.test(main));
+
 ok('Rev 70: categories sync like every other collection',
    /'assignmentHistory','taskTemplates','categories'\]/.test(main));
-ok('Rev 70: the dialog says where each category lives, and offers Share for a local one',
-   /onclick="omsShareCategory\(\$\{i\}\)"/.test(html) && /this computer only/.test(html));
+ok('Rev 70: the dialog says where each category lives',
+   /const where=CC\[c\]\?'built-in':shared\?'shared':'in use';/.test(main));
 
 ok('Rev 68: the Categories dialog offers Add and Delete, and says what each does',
    /id="cat_new"/.test(html) && /onclick="omsAddCategory\(\)"/.test(html)
@@ -3722,16 +3786,18 @@ console.log('\n# Rev 54: the save path (A-04, A-07, A-13, A-14, A-17)');
       FIELDS.f_title = ''; FIELDS.f_date = '';
       FIELDS.f_cat = '__new__'; FIELDS.f_cat_new = 'Invented On A Refused Form';
       try { save(); } catch (e) {}
+      // Rev 71: a category is a canonical record now, not a note in this
+      // browser, so A-13 is checked where the category actually lives.
       ok('A-13: a refused event does not leave its new category behind',
-         !String(sandbox.localStorage.getItem('cao_oms_categories') || '').includes('Invented On A Refused Form'),
-         String(sandbox.localStorage.getItem('cao_oms_categories')));
+         !(T.st.categories || []).some(c => c && c.name === 'Invented On A Refused Form'),
+         JSON.stringify(T.st.categories || []));
       clear(); openEv();
       FIELDS.f_title = 'Real event'; FIELDS.f_date = '2026-10-01';
       FIELDS.f_cat = '__new__'; FIELDS.f_cat_new = 'Kept Because It Saved';
       try { save(); } catch (e) {}
-      ok('A-13: a saved event does remember it',
-         String(sandbox.localStorage.getItem('cao_oms_categories') || '').includes('Kept Because It Saved'),
-         String(sandbox.localStorage.getItem('cao_oms_categories')));
+      ok('A-13: a saved event does remember it, as a shared record',
+         (T.st.categories || []).some(c => c && c.name === 'Kept Because It Saved'),
+         JSON.stringify(T.st.categories || []));
       sandbox.localStorage.removeItem('cao_oms_categories');
     }
   }

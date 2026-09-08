@@ -1245,19 +1245,35 @@
     "why": "Rev 70 (FAB-47, DEC-032). A collection missing from OMS_COLLECTIONS emits no operations in either direction while the interface reports success - the gw and rob defect. The guide promises everybody sees a new category, so the collection must be in the sync set."
   },
   {
-    "id": "rev70-share-a-local-category",
-    "code": "function omsShareCategory(",
-    "requires_text": "press <strong>Share</strong> to give it to the office",
-    "reachable_from": [
-      "omsCatSectionHtml"
-    ],
-    "symbol": "omsShareCategory",
-    "why": "Rev 70. A category added before the shared collection existed sits in one browser, and only that person can see it to promote it. The button must be on the dialog the sentence names."
-  },
-  {
     "id": "rev70-rename-moves-the-record",
     "text": "renames the shared category itself, in one save",
     "requires_code": "(ST.categories||[]).forEach(x=>{if(x&&String(x.name||'').trim()===from){x.name=to;catTouched=true}});",
     "why": "Rev 70. Renaming a category nothing uses must still persist; the old code returned early when no record changed, so the rename was lost. This line and the catTouched guard are the promise."
+  },
+  {
+    "id": "rev71-no-browser-category-store",
+    "text": "Nothing is kept in your browser",
+    "forbids_code": "localStorage.setItem(OMS_CATS_KEY",
+    "why": "Rev 71 (Hossam's instruction). Categories are canonical. Nothing may write a category into browser storage again; the only remaining read is the one-shot drain at boot."
+  },
+  {
+    "id": "rev71-form-categories-are-canonical",
+    "code": "function omsEnsureCategory(",
+    "requires_text": "whether you add it in the Categories dialog or type it into the Category box on an event, task or SOP",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "symbol": "omsEnsureCategory",
+    "why": "Rev 71. A category typed on an event, task or SOP form used to be remembered in localStorage. The guide now promises it is shared however it was created, so the save path must create the canonical record."
+  },
+  {
+    "id": "rev71-legacy-drain",
+    "code": "function omsMigrateLocalCategories(",
+    "requires_text": "moved into shared OMS the next time that person opened OMS",
+    "reachable_from": [
+      "OMS_BOOT"
+    ],
+    "symbol": "omsMigrateLocalCategories",
+    "why": "Rev 71. Removing the browser store would silently lose a name somebody had added, so it is drained once at boot. The guide says so, and the drain must actually be wired into boot rather than merely defined - the Rev 34 failure."
   }
 ]
