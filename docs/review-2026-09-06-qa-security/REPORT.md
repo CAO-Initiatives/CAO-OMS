@@ -404,6 +404,29 @@ Hossam's decision on the limitation Rev 68 exposed. A category lived in whicheve
 
 **Verified end to end on the live artifact**, not in a harness: adding a category from the dialog produced gateway commit `191d133 OMS create: categories/cat-shared-probe-delete-me`, a consolidator run, and canonical revision 109 holding the record with `_version` 1 and the signed-in author. Deleting it returned canonical to 110 with the collection empty. Both directions work through all three repositories.
 
+### 12.12 Rev 71: the browser stops holding categories at all
+
+Hossam, reading Rev 70: *categories must be canonical, not live in your browser.* He was right that Rev 70 stopped half way. It made new categories canonical but kept READING the old per-browser list, so a name added before it shipped did not vanish from the screen of whoever typed it. Kind to that one person, and wrong overall: it left two homes for one thing, which is the exact split the change existed to close. A category could still be real on one machine and nowhere else, and the dialog needed a *this computer only* label and a Share button to explain a distinction that should not have existed.
+
+**Nothing reads or writes browser storage for categories now.** `eventCategories()` draws on two sources only: the canonical `categories` collection, and the names records actually carry. `omsCustomCats`, `omsRememberCat` and `omsForgetCat` are gone. A category typed into the Category box on an event, task or SOP form creates a canonical record through `omsEnsureCategory`, where it used to be remembered locally, so the vocabulary is the same for everybody however it was created. The Share button and the third state went with the store they described, leaving two: a record of its own, or carried by the records using it.
+
+**The old list is drained once, at boot, rather than dropped.** Deleting the store outright would have silently lost a name somebody had typed, so `omsMigrateLocalCategories` runs after the role is resolved, promotes any name that is not built-in, not already a record and not already carried by a record, and deletes the key. It is deliberately guarded, because a boot-time write is a write on a read and this project has been bitten by one before - Rev 50, where the boot migration left every collection dirty and the idle refresh never ran again. With nothing to move it deletes a redundant key and writes nothing at all. A read-only account never writes, but the key still goes, because reading it is precisely what this change removes.
+
+**Both paths verified live, not in a harness.**
+
+| Path | Result |
+|---|---|
+| Ordinary boot, key held only duplicates of built-ins | key deleted, canonical unchanged at 110, nothing dirty |
+| Boot with a genuine local-only name | gateway commit `c8c1a3a`, consolidator run, canonical 111 holding the record |
+| A built-in sitting beside it in the same list | discarded, not duplicated |
+| Deleting the probe | canonical 112, collection empty |
+
+**One assertion moved rather than being deleted.** A-13 has proved since Rev 54 that a refused event form leaves no new category behind while a saved one keeps it. Its intent is untouched; it now looks for the category where a category actually lives.
+
+**Two of my own assertions failed on my own prose**, again, and the lesson is the same one as Rev 69: a check that greps the whole artifact for a token will match the code comment explaining the token's removal, and the release note quoting it. Both are now scoped to definitions and to markup rather than to mentions.
+
+**Emails: blocked, and not silently.** The Outlook web session expired mid-session and re-authenticating needs Hossam's password, which I do not type. All three drafts are saved and intact. Only the Maggie and Ari agenda needs a line about this change, and the exact paragraph to paste is on the Desktop as `EMAIL_ADDENDUM_categories_shared_2026-09-07.txt`, along with the reminder to delete the two malformed duplicate invitations.
+
 ## 13. Why four items were left alone on day one, and what changed
 
 - **The scheduled consolidator drain.** It is GitHub's scheduler, not this system's code; DEC-019 already records that it does not fire reliably and asks what to do about it. OPS-039 made it a backstop rather than the recovery path: any later push now drains the inbox, and a manual dispatch works in seconds. Still open as a question of whether to rely on the schedule at all; the honest options are to accept it as-is, or to have the gateway dispatch the workflow after each accepted operation, which needs the GitHub App to hold the Actions permission and is a gateway PR.
