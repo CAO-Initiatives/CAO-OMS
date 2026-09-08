@@ -4104,6 +4104,38 @@ console.log('\n# Rev 54: owners and notifications (A-05, A-06, A-10, A-15, A-16,
     }
   }
 
+
+  /* Rev 73 (DEC-033). The SOP Owner field said an owner matching nobody was
+     still accepted "but no reminder can reach them", and the guide carried the
+     same contrast. It reads as though a MATCHED owner could be reminded. None
+     can: nothing reads a SOP's stored address and no notification builder is
+     reachable from the SOP save branch. The text now says so, and these pin the
+     facts it rests on - a claim about what the software does NOT do is only as
+     good as a check that would notice it starting to. */
+  {
+    const sopStart = main.indexOf("t==='sop'");
+    const sopEnd = main.indexOf('} else if(t===', sopStart + 10);
+    const sopBranch = (sopStart >= 0 && sopEnd > sopStart) ? main.slice(sopStart, sopEnd) : '';
+    ok('DEC-033: the SOP save branch can be located, so the checks below mean something',
+       sopBranch.length > 400, 'branch length ' + sopBranch.length);
+    ['createNotificationForTask', 'notifyDependentsOnCompletion', 'createDueReminders',
+     'omsStaleDueReminders', 'ST.notifications'].forEach(sym => {
+      ok('DEC-033: the SOP save branch does not reach ' + sym, !sopBranch.includes(sym));
+    });
+    ok('DEC-033: the SOP save ends at the SOPs renderer, with nothing queued',
+       /rSOPs\(\);\s*$/.test(sopBranch.trim()), sopBranch.trim().slice(-70));
+    ok('DEC-033: no notification is ever addressed from a SOP record',
+       !/\bsop[A-Za-z]*\.ownerEmail/i.test(main));
+    ok('DEC-033: an ambiguous SOP owner is refused rather than guessed at',
+       /if\(sopOwner&&ownerAmbiguity\(sopOwner\)\)/.test(main));
+    ok('DEC-033: the SOP owner help no longer promises a reminder',
+       !/no reminder can reach them/.test(main) && /OMS does not email SOP owners/.test(main));
+    ok('DEC-033: and the guide no longer implies one either',
+       !/but nothing can remind them/.test(main) && /an SOP owner is never emailed by OMS/i.test(main));
+    ok('DEC-033: the SOP record still carries ownerId, so an owner stays resolvable',
+       /ownerId:sopPerson\?sopPerson\.id:''/.test(main));
+  }
+
   const handoff2 = G('notifyDependentsOnCompletion');
   if (typeof handoff2 === 'function') {
     T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], people: [], tasks: [

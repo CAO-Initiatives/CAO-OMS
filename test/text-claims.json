@@ -1293,5 +1293,27 @@
     ],
     "symbol": "omsOwnerAddress",
     "why": "Rev 72 (FAB-48). Existence is not reachability. All three notification builders address a draft, and a resolver wired into only one of them would leave the other two routing to a stale address while the guide claimed otherwise."
+  },
+  {
+    "id": "rev73-sop-ambiguous-owner-is-refused",
+    "text": "a name matching two people is refused rather than guessed at",
+    "requires_code": "if(sopOwner&&ownerAmbiguity(sopOwner))",
+    "why": "Rev 73 (DEC-033). Both the SOP Owner field and the guide promise the SOP save refuses an ambiguous name. That guard is in the SOP branch specifically, not shared with tasks, so the promise has to be tied to the branch that keeps it."
+  },
+  {
+    "id": "rev73-sop-ambiguity-guard-is-described",
+    "code": "if(sopOwner&&ownerAmbiguity(sopOwner))",
+    "requires_text": "a name matching two people is refused rather than guessed at",
+    "reachable_from": [
+      "saveModal"
+    ],
+    "symbol": "ownerAmbiguity",
+    "why": "Rev 73 (DEC-033). Existence is not reachability. The guard only helps if it sits in the save path, and the same sentence appears on the form and in the guide."
+  },
+  {
+    "id": "rev73-sop-review-visibility-replaces-the-reminder-promise",
+    "text": "shows on the SOPs table and in SOP Reviews Due on the Dashboard",
+    "requires_code": "function sopReviewCard(",
+    "why": "Rev 73 (DEC-033). The old text offered a reminder that never existed. The replacement points at what actually happens instead, so if that card is ever removed the sentence must go with it rather than becoming the next false promise."
   }
 ]

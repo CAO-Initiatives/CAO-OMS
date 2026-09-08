@@ -278,6 +278,28 @@ else
   fail "15 scripts/no_focus_losing_inputs.py or its negative control is missing from the repository"
 fi
 
+# ---------- 16. the SOP owner text keeps saying only what the code does ----------
+# Rev 73 (DEC-033). The SOP Owner field and the User Guide told people an owner
+# matching nobody was still accepted "but no reminder can reach them", which
+# reads as though a MATCHED owner could be reminded. None can, and none ever
+# could: nothing reads a SOP's stored address and no notification builder is
+# reachable from the SOP save branch. The text now states that plainly, which
+# makes it a claim about what the software does NOT do - worth exactly as much
+# as a check that would notice it starting to. The smoke suite carries those
+# checks; this control breaks the artifact four ways and requires each break to
+# be caught, because a guard that only ever passes is the failure this project
+# has now had three times.
+if [ -f test/sop_no_notification_negative.py ]; then
+  if python3 test/sop_no_notification_negative.py >/dev/null 2>&1; then
+    pass "16 the SOP no-email guards still catch real drift"
+  else
+    python3 test/sop_no_notification_negative.py || true
+    fail "16 the SOP no-email guards no longer catch drift - their mutation control failed"
+  fi
+else
+  fail "16 test/sop_no_notification_negative.py is missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"
