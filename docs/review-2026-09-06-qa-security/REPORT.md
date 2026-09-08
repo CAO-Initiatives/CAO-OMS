@@ -425,7 +425,7 @@ Hossam, reading Rev 70: *categories must be canonical, not live in your browser.
 
 **Two of my own assertions failed on my own prose**, again, and the lesson is the same one as Rev 69: a check that greps the whole artifact for a token will match the code comment explaining the token's removal, and the release note quoting it. Both are now scoped to definitions and to markup rather than to mentions.
 
-**Emails: blocked, and not silently.** The Outlook web session expired mid-session and re-authenticating needs Hossam's password, which I do not type. All three drafts are saved and intact. Only the Maggie and Ari agenda needs a line about this change, and the exact paragraph to paste is on the Desktop as `EMAIL_ADDENDUM_categories_shared_2026-09-07.txt`, along with the reminder to delete the two malformed duplicate invitations.
+**Emails: blocked, then unblocked.** The Outlook web session expired mid-session and re-authenticating needs Hossam's password, which I do not type, so the change was written up for him to paste rather than quietly skipped. He restored the session the same evening and the paragraph was added directly: item 6 of the agenda to Maggie and Ari, draft saved 9:11 PM. The other two drafts needed no change and were checked and found intact - Rachel's is about the calendar export, and the tester checklist deliberately never asks a tester to touch categories. Nothing has been sent. Rachel's draft was confirmed indirectly, by the Drafts count and by Outlook's own save confirmations when it was written, because the message list does not render while its tab is hidden.
 
 ## 13. Why four items were left alone on day one, and what changed
 
