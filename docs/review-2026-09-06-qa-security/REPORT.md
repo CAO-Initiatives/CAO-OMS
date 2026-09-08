@@ -384,6 +384,26 @@ The script now runs to twenty-four steps in seven parts, adds the things it pred
 
 **Three emails prepared in Outlook, none sent.** A new one to Rachel answering the export question and asking what the spreadsheet is actually for. The Maggie and Ari agenda revised, with a new opening section on what changed this week, Ari's ask corrected to "Recurring" with the real figures (3 of 275), and Maggie's ask naming her Key Dates Calendar specifically so it cannot be confused with Ari's Events Calendar. The team invitation reattached with the rewritten checklist and retimed to half an hour. Two malformed duplicate invitations remain in Drafts from an earlier deeplink attempt; they carry plus signs instead of spaces in the subject and should be deleted.
 
+### 12.11 Rev 70: categories become shared canonical data (FAB-47, DEC-032)
+
+Hossam's decision on the limitation Rev 68 exposed. A category lived in whichever browser typed it: `eventCategories()` built its list from the built-in set, every category string a record actually carried, and a per-browser list in `localStorage`. So a name one person invented stayed invisible to everyone else until a record happened to use it, and Delete could only ever remove an unused one, because the list was rebuilt from the records themselves.
+
+**Landed in the required order, data then gateway then client, each inert on its own.**
+
+- **Data, OPS-042, PR #19.** `categories` added to the consolidator's `ALLOWED`, to `validate_canonical`'s `ALLOWED`, and to the `entityType` enum in the operation schema. No apply-path change was needed; the consolidator handles collections generically.
+- **Gateway, OMS-067, PR #24.** One line of allow-list. The branch is misnamed `oms-066`; OMS-066 was the make-users fix, and the work is OMS-067.
+- **Client, Rev 70, v1.53.0.** `categories` joins `OMS_COLLECTIONS`, which is the line that matters: a collection missing from it emits no operations in either direction while the interface reports success, which is exactly the `gw` and `rob` defect this project already had once.
+
+**The tests are the point, not the allow-list entries.** `taskTemplates` sat in all the same places for weeks with nothing writing one, which is how a collection can be "supported" and untested at the same time. So the consolidator test now drives a category through create, rename and delete; the gateway's operation-guards test validates all three actions, refuses a near-miss name (`categorys`), and pushes one through `submitOperation` to confirm it reaches the inbox with a readable commit message; and the smoke suite covers add, rename, delete, the legacy promotion path and the viewer refusal.
+
+**Record shape, and why a rename is two things.** A record is `{id, name}`. Records reference a category by NAME, so the id exists purely so the record can be synced, updated and deleted like any other, and a rename is an UPDATE rather than a delete and a create. The id therefore stops matching the name after a rename, which is deliberate and is the same rule person ids follow. A rename is consequently an update to the category record AND a rewrite of every event, task and SOP carrying the old string, sent as one save, which is what Rev 60's batching is for.
+
+**One real defect fixed on the way.** `renameCategory` ended with `if(k){...save()}`, where `k` counts records changed. Renaming a category that nothing uses gives `k === 0`, so the function returned early and the rename was silently dropped. That did not matter while the name lived only in `localStorage` and the dialog rebuilt itself from that list, and it matters now. The save is gated on `k || catTouched`, and a smoke assertion pins the zero-record case.
+
+**Migration, stated rather than hidden.** The per-browser list is still READ, so a name somebody added before this shipped does not vanish from their screen; it is no longer written, so that list can only shrink. The dialog now shows where every category lives in its own column - built-in, shared, in use, or *this computer only* - and a local one carries a **Share** button that promotes it to the shared collection and clears the local copy. Only the person whose browser holds it can see it to promote it, which is precisely why the label exists rather than the difference being smoothed over.
+
+**Verified end to end on the live artifact**, not in a harness: adding a category from the dialog produced gateway commit `191d133 OMS create: categories/cat-shared-probe-delete-me`, a consolidator run, and canonical revision 109 holding the record with `_version` 1 and the signed-in author. Deleting it returned canonical to 110 with the collection empty. Both directions work through all three repositories.
+
 ## 13. Why four items were left alone on day one, and what changed
 
 - **The scheduled consolidator drain.** It is GitHub's scheduler, not this system's code; DEC-019 already records that it does not fire reliably and asks what to do about it. OPS-039 made it a backstop rather than the recovery path: any later push now drains the inbox, and a manual dispatch works in seconds. Still open as a question of whether to rely on the schedule at all; the honest options are to accept it as-is, or to have the gateway dispatch the workflow after each accepted operation, which needs the GitHub App to hold the Actions permission and is a gateway PR.
