@@ -12,7 +12,7 @@
      refuses to execute anything else. Recompute it if the version changes:
        curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A  -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-</head><body><header><div class="hbr"><div class="hic">&#127963;</div><div><div class="ht">CAO Operations Management System (OMS)</div><div class="hs">CAO/Dean's Office Operating System (Key Dates, Events, RoB)</div><div class="buildline"><span class="vbadge">v1.54.0</span></div></div></div><div class="hr"><span id="syncState" class="sync-pill sync-auth">Authentication required</span><span id="userChip" class="user-chip"></span><span class="hts" id="ts"></span><div class="gsr"><input class="srch gsin" id="gsearch" placeholder="Search OMS..." aria-label="Search tasks, events, SOPs and people" autocomplete="off" oninput="omsGlobalSearchInput(this.value)" onkeydown="omsGlobalSearchKey(event)" onfocus="omsGlobalSearchInput(this.value)" data-tip="Search tasks, events, SOPs and people at once.
+</head><body><header><div class="hbr"><div class="hic">&#127963;</div><div><div class="ht">CAO Operations Management System (OMS)</div><div class="hs">CAO/Dean's Office Operating System (Key Dates, Events, RoB)</div><div class="buildline"><span class="vbadge">v1.55.0</span></div></div></div><div class="hr"><span id="syncState" class="sync-pill sync-auth">Authentication required</span><span id="userChip" class="user-chip"></span><span class="hts" id="ts"></span><div class="gsr"><input class="srch gsin" id="gsearch" placeholder="Search OMS..." aria-label="Search tasks, events, SOPs and people" autocomplete="off" oninput="omsGlobalSearchInput(this.value)" onkeydown="omsGlobalSearchKey(event)" onfocus="omsGlobalSearchInput(this.value)" data-tip="Search tasks, events, SOPs and people at once.
 Results are grouped by type; Enter opens the first,
 arrow keys move, Escape clears."><div id="gsres" class="gsres" hidden></div></div><button class="btn br2 bsm" onclick="doPrint()" data-tip="Print the currently active tab.
 Switch to the desired tab first.
@@ -1043,7 +1043,7 @@ function migrateNotificationsState(){
   save();
 }
 /* Rev 54 (A-05). Resolving an owner and OFFERING an owner are two different questions and this filter answered both with one rule. Deactivating somebody made every task they still own unresolvable: each save prompted for an email address that was already on file, and typing it created a SECOND person holding the same address, splitting the routing and the history in two. Resolution now sees inactive people; ownerSelectHtml still offers only active ones, plus whoever currently owns the record. */
-function findPeople(q,includeInactive){
+function findPeople(q,includeInactive,exactOnly){
   const n=String(q||'').trim().toLowerCase();
   if(!n)return [];
   const people=(ST.people||[]).filter(p=>p&&(includeInactive||p.active!==false));
@@ -1059,12 +1059,18 @@ function findPeople(q,includeInactive){
     p=>String(p.id||'')===slug(n),
     p=>parts(p).some(w=>w.startsWith(n)&&n.length>=3)
   ];
-  for(const r of rungs){const hit=people.filter(r);if(hit.length)return hit}
+  /* Rev 72 (FAB-48). exactOnly drops the last rung. The ladder's tail is a
+     3-character prefix match, which is right for somebody typing into a box
+     and wrong for deciding where an email goes: "Kat" would bind Katie even
+     when the record already names somebody else. Addressing passes the flag;
+     every interactive caller keeps the full ladder. */
+  const use=exactOnly?rungs.slice(0,5):rungs;
+  for(const r of use){const hit=people.filter(r);if(hit.length)return hit}
   return [];
 }
-function findPerson(nameOrEmail,includeInactive){
+function findPerson(nameOrEmail,includeInactive,exactOnly){
   // Binds ONLY when unambiguous. Two matches must never silently become one.
-  const hits=findPeople(nameOrEmail,includeInactive);
+  const hits=findPeople(nameOrEmail,includeInactive,exactOnly);
   return hits.length===1?hits[0]:null;
 }
 function ownerAmbiguity(nameOrEmail){
@@ -1192,6 +1198,33 @@ function tasksDueSoon(days){
     return d>=TODAY&&d<=horizon;
   });
 }
+/* Rev 72 (FAB-48). A task carries its own copy of its owner's address, so the
+   three notification builders can address a draft without a directory lookup.
+   That copy goes stale and nothing corrected it: changing somebody's address
+   in People rewrites the person and leaves every task of theirs pointing at
+   the old one, Copy clones whatever the source held, and the boot backfill
+   returns early when an address is merely WRONG rather than missing.
+   Found live on 7 Sept 2026. Two tasks reassigned away from Rachel Woodside
+   still carried her address, so Remind on a task the grid showed as Maggie's
+   would have drafted an email to Rachel saying "Owner: Maggie Scirica".
+   The address is resolved when the draft is built and never written back: a
+   write on a read is the Rev 50 trap. Resolution is name first, because the
+   owner name is what the grid shows and what the body states; ownerId is the
+   fallback so a RENAMED person still routes; the stored address is last.
+   The stored address still decides WHETHER a task notifies, so which tasks
+   produce a draft is unchanged - only where the draft is addressed. */
+function omsOwnerAddress(rec){
+  if(!rec)return '';
+  /* Active first, then inactive, and exact rungs only. Refusing inactive
+     people here would send a deactivated owner's mail through the stale
+     ownerId - the very defect this exists to stop - while trying inactive
+     FIRST would let a deactivated namesake outrank the live person. */
+  const byName=rec.owner?(findPerson(rec.owner,false,true)||findPerson(rec.owner,true,true)):null;
+  if(byName&&String(byName.email||'').trim())return String(byName.email).trim();
+  const byId=rec.ownerId?(ST.people||[]).find(x=>x&&String(x.id)===String(rec.ownerId)):null;
+  if(byId&&String(byId.email||'').trim())return String(byId.email).trim();
+  return String(rec.ownerEmail||'').trim();
+}
 function createDueReminders(days){
   ST.notifications=Array.isArray(ST.notifications)?ST.notifications:[];
   let made=0;
@@ -1199,7 +1232,20 @@ function createDueReminders(days){
     /* Keyed on task AND due date, so moving a due date earns a fresh reminder
        while clicking twice does not. */
     /* Rev 54 (A-10). The key held the task and the due date but not the recipient, so once a task changed hands Remind found the OLD owner's reminder, decided the job was done, and the new owner was never told. Who it is addressed to is part of what makes a reminder the same reminder. */
-    if(ST.notifications.some(x=>x&&x.type==='due_reminder'&&String(x.taskId)===String(t.id)&&String(x.dueDate||'')===String(t.due||'')&&String(x.recipientEmail||'').toLowerCase()===String(t.ownerEmail||'').toLowerCase()))return;
+    const _to=omsOwnerAddress(t);
+    /* Rev 72 (FAB-48). Retire any pending draft for this task and due date
+       addressed somewhere else before writing a new one, or correcting an
+       address in People leaves two live drafts about one task addressed to
+       two people. Remind is an explicit action the user confirmed, so this is
+       not a write on a read - the Rev 50 trap - and reassignment is handled
+       separately by omsStaleDueReminders. */
+    (ST.notifications||[]).forEach(x=>{
+      if(!x||x.type!=='due_reminder'||x.status!=='pending')return;
+      if(String(x.taskId)!==String(t.id)||String(x.dueDate||'')!==String(t.due||''))return;
+      if(String(x.recipientEmail||'').trim().toLowerCase()===_to.toLowerCase())return;
+      x.status='stale';x.staleAt=new Date().toISOString();
+    });
+    if(ST.notifications.some(x=>x&&x.type==='due_reminder'&&String(x.taskId)===String(t.id)&&String(x.dueDate||'')===String(t.due||'')&&String(x.recipientEmail||'').toLowerCase()===_to.toLowerCase()))return;
     const subject=omsSubject('Reminder',t);
     const body=['A task you own is due shortly.','',
       'Task: '+(t.title||'Untitled task'),'Owner: '+(t.owner||''),
@@ -1208,7 +1254,7 @@ function createDueReminders(days){
       'Open OMS: '+window.location.href,'',
       OMS_MAIL_SIGNOFF].join('\n');
     ST.notifications.unshift({id:uid(),type:'due_reminder',taskId:t.id,dueDate:t.due||'',
-      recipientName:t.owner||'',recipientEmail:t.ownerEmail||'',subject:subject,body:body,
+      recipientName:t.owner||'',recipientEmail:_to,subject:subject,body:body,
       status:'pending',createdAt:new Date().toISOString(),method:'outlook_draft'});
     made++;
   });
@@ -1218,13 +1264,24 @@ function createDueReminders(days){
 /* Rev 54 (A-10). The other half. A pending reminder addressed to whoever used to own the task is not merely redundant - opening it drafts an email telling somebody to finish work that is no longer theirs. Reassigning marks those stale; the bell counts only pending, so they leave the badge, and the queue says why they are still listed rather than hiding them. */
 function omsStaleDueReminders(task,previous){
   if(!task||!previous)return 0;
-  const was=String(previous.ownerEmail||'').trim().toLowerCase(),now=String(task.ownerEmail||'').trim().toLowerCase();
-  if(!was||was===now)return 0;
+  const now=omsOwnerAddress(task).trim().toLowerCase();
+  /* Rev 72 (FAB-48). A draft records the address it was addressed to when it
+     was WRITTEN. Comparing a fresh lookup of `previous` against that frozen
+     value matches nothing the moment the two drift - which is the entire
+     condition this revision exists for, and covers every draft already in
+     canonical, since those were addressed from the stored field. So match the
+     UNION: what the previous record resolves to today, and the raw copy it
+     still carries. Anything already addressed to the new owner is excluded,
+     so a correct draft is never retired. */
+  const was=[omsOwnerAddress(previous),previous.ownerEmail]
+    .map(v=>String(v||'').trim().toLowerCase())
+    .filter((v,i,a)=>v&&v!==now&&a.indexOf(v)===i);
+  if(!was.length)return 0;
   let k=0;
   (ST.notifications||[]).forEach(n=>{
     if(!n||n.type!=='due_reminder'||n.status!=='pending')return;
     if(String(n.taskId)!==String(task.id))return;
-    if(String(n.recipientEmail||'').trim().toLowerCase()!==was)return;
+    if(was.indexOf(String(n.recipientEmail||'').trim().toLowerCase())<0)return;
     n.status='stale';n.staleAt=new Date().toISOString();k++;
   });
   return k;
@@ -1258,7 +1315,7 @@ function notifyDependentsOnCompletion(task,previous){
       'Open OMS: '+window.location.href,'',
       OMS_MAIL_SIGNOFF].join('\n');
     ST.notifications.unshift({id:uid(),type:'handoff_ready',taskId:d.id,
-      recipientName:d.owner||'',recipientEmail:d.ownerEmail||'',subject:subject,body:body,
+      recipientName:d.owner||'',recipientEmail:omsOwnerAddress(d),subject:subject,body:body,
       status:'pending',createdAt:new Date().toISOString(),method:'outlook_draft'});
     made++;
   });
@@ -1294,7 +1351,7 @@ function createNotificationForTask(task,previous){
     OMS_MAIL_SIGNOFF
   );
   const body=bodyLines.join('\n');
-  const n={id:uid(),type,taskId:task.id,recipientName:task.owner,recipientEmail:task.ownerEmail,subject,body,status:'pending',createdAt:new Date().toISOString(),method:'outlook_draft'};
+  const n={id:uid(),type,taskId:task.id,recipientName:task.owner,recipientEmail:omsOwnerAddress(task),subject,body,status:'pending',createdAt:new Date().toISOString(),method:'outlook_draft'};
   ST.notifications.unshift(n);
   ST.assignmentHistory.unshift({id:uid(),taskId:task.id,type,owner:task.owner,ownerEmail:task.ownerEmail,at:new Date().toISOString()});
 }
@@ -2111,6 +2168,7 @@ function guideFor(role){
   ]);
 
   const notifications=guideSec('Notifications, and what OMS will not do',[
+    '<strong>A draft is addressed to the person the task names</strong>, looked up in People at the moment the draft is built rather than trusted from the task record. Change somebody&rsquo;s address in People and the next draft for a task they own goes to the new address, with nothing to re-save. A reminder already waiting that was addressed to the old one is marked stale the next time you use Remind, rather than left in the queue to be sent.',
     '<strong>OMS writes emails. It never sends them.</strong> Every notification is a draft waiting for a person to read it and press send.',
     'Open the bell to see what is waiting. Each one opens a ready-made email.',
     'Subjects follow one pattern so they are easy to scan: <em>OMS | Due Tue 8 Sep 2026 | New assignment | task | owner</em>, with <em>HIGH PRIORITY</em> added for urgent work.',
@@ -2349,6 +2407,7 @@ let _cat=gv('f_cat'),_catNew=''; if(_cat==='__new__'){_cat=String(gv('f_cat_new'
 } 
 /* ─── REVISION LOG ─── */
 const OMS_REV_LOG=[
+  {rev:72,date:'2026-09-08',summary:'Rev 72 (FAB-48, found while fact-checking an email). A task keeps its own copy of its owner\'s address and nothing kept that copy true: correcting somebody in People touches no task, Copy clones whatever the source held, and the boot backfill only fills an address that is MISSING, never one that is wrong. Two records reassigned away from their previous owner still carried her address, so Remind on a task the grid showed as somebody else\'s would have drafted the email to her. All three notification builders now resolve the recipient through omsOwnerAddress when the draft is built - owner name first, then ownerId so a renamed person still routes, then the stored copy - and never write the correction back, because a write on a read is the Rev 50 trap. Resolution tries active people then inactive ones, and uses exact rungs only, so the directory\'s three-character prefix match cannot decide where mail goes. A reminder already queued to a superseded address is retired rather than left live, both on reassignment and on the next Remind. Gate check 7 rebuilt: it grepped the diff for guide markup and so could not see a sentence added to a guide section, while any edit touching one of two long lines counted; it now hashes the guide\'s brace-matched source region, with its own negative control. User Guide updated.'},
   {rev:71,date:'2026-09-08',summary:'Rev 71 (Hossam\'s instruction: a category is canonical, not something that lives in a browser). Rev 70 made new categories canonical but kept reading the old per-browser list so that a name added before it shipped did not vanish from the screen of whoever typed it. That left two homes for one thing, which is the split the change existed to close: a category could still be real on one machine and nowhere else, and the dialog needed a this-computer-only label and a Share button to explain it. Nothing reads or writes browser storage for categories now. The old list is drained once at boot, after the role is known, and the key is deleted: a name that is not built-in, not already a record and not already carried by a record becomes a canonical record, and in the ordinary case where there is nothing to move the drain deletes a redundant key and writes nothing. A read-only account never writes but the key still goes. A category typed into the Category box on an event, task or SOP form also creates a canonical record now, where it used to be remembered locally, so the vocabulary is the same for everybody however it was created. The Share button and the this-computer-only state went with the store they described, leaving two states a category can be in: a record of its own, or carried by the records using it. One existing assertion moved rather than being deleted: A-13 still proves a refused form leaves no category behind and a saved one keeps it, now checked where a category actually lives.'},
   {rev:70,date:'2026-09-07',summary:'Rev 70 (FAB-47, DEC-032: categories become shared canonical data). A category used to live in whichever browser typed it, so a name one person invented stayed invisible to everyone else until a record happened to use it, and Delete could only ever remove an unused one because the list was rebuilt from the records themselves. There is now a categories collection in canonical, landed across all three repositories: data OPS-042 added it to the consolidator allow-list, the canonical validator and the operation schema, and drives a category through create, rename and delete in the consolidator test; gateway OMS-067 allows the entity type, with five checks that exercise it rather than trusting the allow-list entry; and the client joins the collection to OMS_COLLECTIONS so it syncs like anything else. A record is an id and a name, because events, tasks and SOPs reference a category by name: a rename is therefore an update to the category record AND a rewrite of every record carrying the old string, sent as one save, and renaming a category nothing uses now persists where before it was silently dropped because no record changed. The per-browser list is still read so a name added before this shipped does not vanish from that person\'s screen, but it is no longer written; the dialog labels such a row this computer only and offers a Share button that promotes it. The right-hand column now says where every category lives.'},
   {rev:69,date:'2026-09-07',summary:'Rev 69 (finishing Rev 68\'s rename). Rev 68 said one word for one bit and left three strings a person can actually read still saying standing: the Cadence line written onto the About this export sheet of a calendar export, the Mark standing and Not standing toggle buttons in the import preview, and the User Guide sentence about an annual gala. All three now say recurring, and two assertions name those surfaces so the next miss fails the build. The internal filter token calCadence equals standing and the importer\'s title-word regex are deliberately unchanged: the token keeps saved calendar views working, and the regex matches words that appear in event titles rather than anything on screen. Found by the Rev 68 register and QA audit, which read the shipped artifact rather than the release note.'},

@@ -3887,9 +3887,221 @@ console.log('\n# Rev 54: owners and notifications (A-05, A-06, A-10, A-15, A-16,
        (T.st.notifications[0] || {}).recipientEmail === 'm@x.org',
        'the old key had no recipient in it, so Remind called the job done and told nobody');
     ok('A-10: the idempotency key now carries the recipient',
-       /String\(x\.recipientEmail\|\|''\)\.toLowerCase\(\)===String\(t\.ownerEmail\|\|''\)\.toLowerCase\(\)/.test(main));
+       /String\(x\.recipientEmail\|\|''\)\.toLowerCase\(\)===_to\.toLowerCase\(\)/.test(main)
+       && /const _to=omsOwnerAddress\(t\);/.test(main));
     ok('A-10: the queue explains a stale row rather than offering to send it',
        /The task changed hands before this was sent/.test(String(G('openNotificationsModal') || '')));
+  }
+
+
+  /* ── Rev 72 (FAB-48). A stale stored address must not decide where a draft
+     goes. Found live: two tasks reassigned away from Rachel Woodside still
+     carried her address, so a reminder for a task the grid showed as Maggie's
+     would have drafted to Rachel, with a body reading "Owner: Maggie Scirica".
+     Every one of the three notification builders is checked, because the
+     defect was in the shared shape rather than in any one of them. */
+  const ownAddr = G('omsOwnerAddress');
+  /* Unconditional on purpose. A guarded block skips silently on an artifact
+     that lacks the function, which is the shape of a check that can only ever
+     pass. These five judge the source and run whatever the artifact holds. */
+  ok('FAB-48: the address resolver exists', typeof ownAddr === 'function');
+  ['createDueReminders', 'createNotificationForTask', 'notifyDependentsOnCompletion'].forEach(fn => {
+    ok('FAB-48: ' + fn + ' addresses its draft through the resolver',
+       /omsOwnerAddress\(/.test(String(G(fn) || '')));
+  });
+  ok('FAB-48: no builder still addresses a draft from the raw stored field',
+     !/recipientEmail:\s*(?:t|d|task)\.ownerEmail/.test(main));
+  if (typeof ownAddr === 'function') {
+    const MAG = 'Margaret.Scirica@Advocatehealth.org';
+    const RAC = 'Rachel.Woodside@Advocatehealth.org';
+    const dir = () => ([
+      { id: 'maggie-scirica', name: 'Maggie Scirica', email: MAG, active: true },
+      { id: 'rachel-woodside-mtisp9qd', name: 'Rachel Woodside', email: RAC, active: true }]);
+    // The exact live shape: the NAME was reassigned, the address and the id
+    // were left behind.
+    const staleTask = extra => Object.assign({
+      id: 'ar', title: 'Annual Report distribution approval', status: 'In Progress',
+      owner: 'Maggie Scirica', ownerId: 'rachel-woodside-mtisp9qd', ownerEmail: RAC }, extra || {});
+
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+              people: dir(), tasks: [staleTask()] });
+    ok('FAB-48: the owner NAME decides the address, not the address left on the record',
+       ownAddr(T.st.tasks[0]) === MAG, ownAddr(T.st.tasks[0]));
+    ok('FAB-48: resolving does NOT write the correction back - a write on a read is the Rev 50 trap',
+       T.st.tasks[0].ownerEmail === RAC && T.st.tasks[0].ownerId === 'rachel-woodside-mtisp9qd');
+
+    // Ladder rung two: a person RENAMED in the directory no longer matches by
+    // name, and must still route through the id rather than the stored copy.
+    const renamed = { owner: 'Margaret Scirica (was)', ownerId: 'maggie-scirica', ownerEmail: 'gone@old.example' };
+    ok('FAB-48: a renamed owner still routes, through ownerId', ownAddr(renamed) === MAG);
+    ok('FAB-48: the ownerId rung writes nothing back either',
+       renamed.ownerEmail === 'gone@old.example' && renamed.ownerId === 'maggie-scirica', JSON.stringify(renamed));
+    // Ladder rung three: nothing resolves, so the stored copy is still used and
+    // behaviour is unchanged for every record that was already correct.
+    const unknown = { owner: 'Nobody Here', ownerId: '', ownerEmail: 'kept@x.org' };
+    ok('FAB-48: an owner who is in no directory falls back to the stored address',
+       ownAddr(unknown) === 'kept@x.org');
+    ok('FAB-48: and the fallback rung writes nothing back',
+       unknown.ownerEmail === 'kept@x.org' && unknown.ownerId === '');
+
+    /* A DEACTIVATED owner. findPeople hides inactive people unless asked, so
+       the name rung used to return nothing here and the resolver fell through
+       to ownerId - which is the stale field - reproducing the defect verbatim
+       for anybody who had been deactivated. */
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+              people: dir().map(p => p.id === 'maggie-scirica' ? Object.assign({}, p, { active: false }) : p),
+              tasks: [staleTask()] });
+    ok('FAB-48: a DEACTIVATED owner still decides the address, rather than the stale id',
+       ownAddr(T.st.tasks[0]) === MAG, ownAddr(T.st.tasks[0]));
+
+    /* ...but a live person must still outrank a deactivated namesake. */
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], tasks: [], people: [
+      { id: 'old-maggie', name: 'Maggie Scirica', email: 'stale@old.example', active: false },
+      { id: 'maggie-scirica', name: 'Maggie Scirica', email: MAG, active: true }] });
+    ok('FAB-48: an active person outranks a deactivated namesake',
+       ownAddr({ owner: 'Maggie Scirica', ownerId: '', ownerEmail: '' }) === MAG);
+
+    /* AMBIGUOUS. Two people answer to the string, so the name rung must refuse
+       rather than guess, and the stored address is used. */
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], tasks: [], people: [
+      { id: 'r-one', name: 'Rachel Woodside', email: 'one@x.org', active: true },
+      { id: 'r-two', name: 'Rachel Woodside', email: 'two@x.org', active: true }] });
+    ok('FAB-48: an ambiguous owner name binds nobody and the stored address stands',
+       ownAddr({ owner: 'Rachel Woodside', ownerId: '', ownerEmail: 'stored@x.org' }) === 'stored@x.org');
+
+    /* The directory ladder ends in a 3-character PREFIX rung, which is right
+       for somebody typing into a box and wrong for choosing a recipient. */
+    T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], tasks: [], people: [
+      { id: 'katie-darling', name: 'Katie Darling', email: 'Katie.Darling@Advocatehealth.org', active: true }] });
+    ok('FAB-48: a mere prefix of somebody\'s name does not decide where mail goes',
+       ownAddr({ owner: 'Kat', ownerId: '', ownerEmail: 'kept@x.org' }) === 'kept@x.org',
+       ownAddr({ owner: 'Kat', ownerId: '', ownerEmail: 'kept@x.org' }));
+    ok('FAB-48: while the interactive ladder still matches a prefix, unchanged',
+       (G('findPeople')('Kat') || []).length === 1);
+    ok('FAB-48: and a record with nothing at all yields nothing rather than throwing',
+       ownAddr({}) === '' && ownAddr(null) === '');
+
+    const T0b = G('TODAY');
+    const soon = n => { const x = new Date(T0b); x.setDate(x.getDate() + n);
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+
+    // 1 of 3. Due reminder.
+    const mkR = G('createDueReminders');
+    if (typeof mkR === 'function') {
+      T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+                people: dir(), tasks: [staleTask({ status: 'Not Started', due: soon(1) })] });
+      const made = mkR(3);
+      const n0 = T.st.notifications[0] || {};
+      ok('FAB-48: a due reminder is addressed to the person the task names', made === 1 &&
+         n0.recipientEmail === MAG, n0.recipientEmail);
+      ok('FAB-48: and still names that person in the row, so address and name agree',
+         n0.recipientName === 'Maggie Scirica');
+      ok('FAB-48: running Remind again recognises its own draft rather than duplicating it',
+         mkR(3) === 0 && T.st.notifications.length === 1);
+    }
+
+    // 2 of 3. Assignment notice.
+    const mkA = G('createNotificationForTask');
+    if (typeof mkA === 'function') {
+      T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+                people: dir(), tasks: [] });
+      mkA(staleTask(), { id: 'ar', owner: 'Rachel Woodside', ownerEmail: RAC });
+      ok('FAB-48: a reassignment notice goes to the new owner, not the address left behind',
+         (T.st.notifications[0] || {}).recipientEmail === MAG,
+         (T.st.notifications[0] || {}).recipientEmail);
+    }
+
+    // 3 of 3. Handoff when a prerequisite closes.
+    const mkH = G('notifyDependentsOnCompletion');
+    if (typeof mkH === 'function') {
+      T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [], people: dir(), tasks: [
+        { id: 'pre', title: 'Prerequisite', status: 'Complete' },
+        staleTask({ id: 'dep', status: 'Not Started', dependsOn: 'pre' })] });
+      const made = mkH(T.st.tasks[0], { status: 'In Progress' });
+      ok('FAB-48: a handoff draft goes to the person the waiting task names', made === 1 &&
+         (T.st.notifications[0] || {}).recipientEmail === MAG,
+         (T.st.notifications[0] || {}).recipientEmail);
+    }
+
+    // The stale-reminder sweep compares what the pending drafts were actually
+    // addressed to, or a reassignment away from a stale record misses them.
+    const stl = G('omsStaleDueReminders');
+    if (typeof stl === 'function' && typeof mkR === 'function') {
+      T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+                people: dir(), tasks: [staleTask({ status: 'Not Started', due: soon(1) })] });
+      mkR(3);
+      const before = JSON.parse(JSON.stringify(T.st.tasks[0]));
+      T.st.tasks[0].owner = 'Rachel Woodside';
+      T.st.tasks[0].ownerId = 'rachel-woodside-mtisp9qd';
+      T.st.tasks[0].ownerEmail = RAC;
+      ok('FAB-48: handing a stale record on still marks the draft the old owner would have got',
+         stl(T.st.tasks[0], before) === 1 && (T.st.notifications[0] || {}).status === 'stale');
+
+      /* The case the first cut of this fix missed. A queued draft carries the
+         address it was written with; correcting somebody in People moves the
+         directory and touches no task, so a sweep that re-resolves BOTH sides
+         compares a fresh lookup against a frozen value and matches nothing. */
+      T.setST({ events: [], sops: [], notifications: [], assignmentHistory: [],
+                people: dir(), tasks: [{ id: 'mv', title: 'Due soon', status: 'Not Started',
+                  due: soon(1), owner: 'Rachel Woodside',
+                  ownerId: 'rachel-woodside-mtisp9qd', ownerEmail: RAC }] });
+      mkR(3);
+      ok('FAB-48: the draft went to the address on file at the time', T.st.notifications.length === 1 &&
+         T.st.notifications[0].recipientEmail === RAC);
+      const beforeMove = JSON.parse(JSON.stringify(T.st.tasks[0]));
+      T.st.people[1].email = 'r.woodside@advocatehealth.org';   // the People edit
+      T.st.tasks[0].owner = 'Maggie Scirica';                   // then the handover
+      T.st.tasks[0].ownerId = 'maggie-scirica';
+      T.st.tasks[0].ownerEmail = MAG;
+      ok('FAB-48: a draft written before an address moved in People is still retired',
+         stl(T.st.tasks[0], beforeMove) === 1 &&
+         (T.st.notifications[0] || {}).status === 'stale',
+         JSON.stringify(T.st.notifications[0] || {}).slice(0, 140));
+
+      /* The population that already exists in canonical: drafts written before
+         this shipped carry the RAW stored address, never a resolved one. The
+         record is the live shape - named Maggie, addressed to Rachel - and it
+         is now handed to a third person, so BOTH previous addresses have to be
+         swept or the draft to Rachel stays live and keeps its Send button. */
+      const ARI = 'Ariana.Ball@advocatehealth.org';
+      T.setST({ events: [], sops: [], notifications: [
+                  { id: 'legacy', type: 'due_reminder', status: 'pending', taskId: 'ar',
+                    dueDate: soon(1), recipientEmail: RAC, recipientName: 'Maggie Scirica' }],
+                assignmentHistory: [],
+                people: dir().concat([{ id: 'ari-ball', name: 'Ari Ball', email: ARI, active: true }]),
+                tasks: [staleTask({ status: 'Not Started', due: soon(1) })] });
+      const legacyPrev = JSON.parse(JSON.stringify(T.st.tasks[0]));
+      T.st.tasks[0].owner = 'Ari Ball';
+      T.st.tasks[0].ownerId = 'ari-ball';
+      T.st.tasks[0].ownerEmail = ARI;
+      ok('FAB-48: a draft queued before this shipped, carrying the raw stored address, is retired too',
+         stl(T.st.tasks[0], legacyPrev) === 1 &&
+         (T.st.notifications[0] || {}).status === 'stale',
+         JSON.stringify(T.st.notifications[0] || {}).slice(0, 140));
+
+      /* ...and a draft already addressed to the new owner is never retired. */
+      T.setST({ events: [], sops: [], notifications: [
+                  { id: 'good', type: 'due_reminder', status: 'pending', taskId: 'ar',
+                    dueDate: soon(1), recipientEmail: MAG, recipientName: 'Maggie Scirica' }],
+                assignmentHistory: [], people: dir(),
+                tasks: [staleTask({ status: 'Not Started', due: soon(1) })] });
+      ok('FAB-48: a draft already addressed to the right person is left alone',
+         stl(T.st.tasks[0], { id: 'ar', owner: 'Rachel Woodside', ownerEmail: RAC }) === 0 &&
+         (T.st.notifications[0] || {}).status === 'pending');
+
+      /* Remind supersedes rather than duplicates when the address has moved
+         underneath a queued draft with no reassignment at all. */
+      T.setST({ events: [], sops: [], notifications: [
+                  { id: 'old', type: 'due_reminder', status: 'pending', taskId: 'ar',
+                    dueDate: soon(1), recipientEmail: RAC, recipientName: 'Maggie Scirica' }],
+                assignmentHistory: [], people: dir(),
+                tasks: [staleTask({ status: 'Not Started', due: soon(1) })] });
+      const madeAgain = mkR(3);
+      const pending = (T.st.notifications || []).filter(n => n.status === 'pending');
+      ok('FAB-48: Remind retires a draft addressed elsewhere instead of leaving two live',
+         madeAgain === 1 && pending.length === 1 && pending[0].recipientEmail === MAG,
+         JSON.stringify((T.st.notifications || []).map(n => [n.status, n.recipientEmail])));
+    }
   }
 
   const handoff2 = G('notifyDependentsOnCompletion');

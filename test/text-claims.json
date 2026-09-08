@@ -1275,5 +1275,23 @@
     ],
     "symbol": "omsMigrateLocalCategories",
     "why": "Rev 71. Removing the browser store would silently lose a name somebody had added, so it is drained once at boot. The guide says so, and the drain must actually be wired into boot rather than merely defined - the Rev 34 failure."
+  },
+  {
+    "id": "rev72-draft-addressed-to-resolved-person",
+    "text": "looked up in People at the moment the draft is built",
+    "requires_code": "function omsOwnerAddress(",
+    "why": "Rev 72 (FAB-48). The guide promises a draft is addressed to the person the task names rather than to the address stored on the record, so the resolver must exist."
+  },
+  {
+    "id": "rev72-resolver-is-reachable",
+    "code": "function omsOwnerAddress(",
+    "requires_text": "looked up in People at the moment the draft is built",
+    "reachable_from": [
+      "createDueReminders",
+      "createNotificationForTask",
+      "notifyDependentsOnCompletion"
+    ],
+    "symbol": "omsOwnerAddress",
+    "why": "Rev 72 (FAB-48). Existence is not reachability. All three notification builders address a draft, and a resolver wired into only one of them would leave the other two routing to a stale address while the guide claimed otherwise."
   }
 ]

@@ -112,11 +112,25 @@ if git rev-parse --verify --quiet "$BASE" >/dev/null && git cat-file -e "$BASE:$
   # touches the guide, and the gate now enforces the rule as written.
   if [ "$ADDED" -gt 0 ]; then
     # ---------- 7. User Guide touched ----------
-    # Guide-specific selectors ONLY. The old gate accepted the bare words
-    # Admin, Import, Tasks and Navigation:, which any unrelated edit satisfies.
-    GUIDE=$(git diff "$BASE" -- "$OMS" | grep -cE "^\+.*(guide-wrap|guide-hero|guide-sec)" || true)
-    if [ "$GUIDE" -gt 0 ]; then
-      pass "7 User Guide updated ($GUIDE guide lines added)"
+    # Rev 72. This grepped the diff for added lines carrying guide-wrap,
+    # guide-hero or guide-sec. Those strings live only in the STRUCTURAL
+    # markup, on two very long lines, so the check was wrong in both
+    # directions: adding a sentence to a guide section - the ordinary way the
+    # guide is edited, every section being an array of strings handed to
+    # guideSec() - matched nothing and was reported as the guide NOT being
+    # updated, while any edit that happened to touch one of those two lines
+    # counted whatever it did. It now compares the guide's source region
+    # between the baseline and the candidate, which is what the rule means.
+    if [ ! -f scripts/guide_changed.py ] || [ ! -f test/guide_changed_negative.py ]; then
+      fail "7 scripts/guide_changed.py or its negative control is missing from the repository"
+    elif ! python3 test/guide_changed_negative.py >/dev/null 2>&1; then
+      # The control feeds the check real cases: an edit in each of the two
+      # guide builders, an edit outside the guide, a CRLF-only difference, a
+      # renamed guide. If it stops catching them the check is decoration.
+      python3 test/guide_changed_negative.py || true
+      fail "7 the guide check no longer tells a guide edit from anything else - its negative control failed"
+    elif python3 scripts/guide_changed.py /tmp/_base_oms.html "$OMS"; then
+      pass "7 User Guide updated (guide source region differs from $BASE)"
     else
       fail "7 non-cosmetic change ($ADDED added lines) but the embedded User Guide was NOT updated"
     fi
