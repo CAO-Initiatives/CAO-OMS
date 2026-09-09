@@ -986,40 +986,40 @@
     "code": "function omsExportTasks",
     "requires_text": "each have an Export button",
     "reachable_from": [
-      "rTasks"
+      "omsExportRangeRun"
     ],
     "symbol": "omsExportTasks",
-    "why": "Rev 63. The Tasks screen must carry the control the guide promises."
+    "why": "Rev 63. The Tasks screen must carry the control the guide promises. Rev 74: the Tasks Export button opens the range dialog, so the writer is reached from omsExportRangeRun and the control on the screen is proved by rev74-range-dialog-on-every-dated-grid instead."
   },
   {
     "id": "rev63-export-cal-reachable",
     "code": "function omsExportCalendar",
     "requires_text": "Calendars export the list whichever view is showing",
     "reachable_from": [
-      "rCal"
+      "omsExportRangeRun"
     ],
     "symbol": "omsExportCalendar",
-    "why": "Rev 63. The Calendar toolbar must carry the control in both views; rCal draws the toolbar for both."
+    "why": "Rev 63. The Calendar toolbar must carry the control in both views; rCal draws the toolbar for both. Rev 74: the Calendars Export button opens the range dialog, so the writer is reached from omsExportRangeRun and the control on the screen is proved by rev74-range-dialog-on-every-dated-grid instead."
   },
   {
     "id": "rev63-export-sops-reachable",
     "code": "function omsExportSops",
     "requires_text": "each have an Export button",
     "reachable_from": [
-      "rSOPs"
+      "omsExportRangeRun"
     ],
     "symbol": "omsExportSops",
-    "why": "Rev 63."
+    "why": "Rev 63. Rev 74: the SOPs Export button opens the range dialog, so the writer is reached from omsExportRangeRun and the control on the screen is proved by rev74-range-dialog-on-every-dated-grid instead."
   },
   {
     "id": "rev63-export-rob-reachable",
     "code": "function omsExportRob",
     "requires_text": "each have an Export button",
     "reachable_from": [
-      "rRoB"
+      "omsExportRangeRun"
     ],
     "symbol": "omsExportRob",
-    "why": "Rev 63."
+    "why": "Rev 63. Rev 74: the Cadence Export button opens the range dialog, so the writer is reached from omsExportRangeRun and the control on the screen is proved by rev74-range-dialog-on-every-dated-grid instead."
   },
   {
     "id": "rev63-export-people-reachable",
@@ -1315,5 +1315,80 @@
     "text": "shows on the SOPs table and in SOP Reviews Due on the Dashboard",
     "requires_code": "function sopReviewCard(",
     "why": "Rev 73 (DEC-033). The old text offered a reminder that never existed. The replacement points at what actually happens instead, so if that card is ever removed the sentence must go with it rather than becoming the next false promise."
+  },
+  {
+    "id": "rev74-range-dialog-text",
+    "text": "Choose the date range the file should cover",
+    "requires_code": "function omsExportRangeDialog(",
+    "why": "Rev 74 (OMS-026). Four tooltips promise a range dialog; this is the dialog."
+  },
+  {
+    "id": "rev74-range-dialog-on-every-dated-grid",
+    "code": "function omsExportRangeDialog",
+    "requires_text": "Choose the date range the file should cover",
+    "reachable_from": [
+      "rTasks",
+      "rCal",
+      "rSOPs",
+      "rRoB"
+    ],
+    "symbol": "omsExportRangeDialog",
+    "why": "Rev 74. The sentence is unscoped - 'an export can be narrowed to a date range' - so name the four screens it is promising it on. This is the claim that replaces the four Rev 63 on-screen proofs, and it is stronger than they were: Rev 34 shipped a control on one dialog while the guide described it in general terms, and existence alone could not tell the difference."
+  },
+  {
+    "id": "rev74-dispatcher-reaches-the-writers",
+    "code": "function omsExportRangeRun",
+    "requires_text": "narrowed to a date range",
+    "reachable_from": [
+      "omsExportRangeApply"
+    ],
+    "symbol": "omsExportRangeRun",
+    "why": "Rev 74. Export in the dialog must actually write a file. A dispatcher nothing calls is a dialog whose Export button does nothing, which is how Rev 34's lookahead shipped as dead code."
+  },
+  {
+    "id": "rev74-range-narrows-rows",
+    "code": "function omsRangeSplit",
+    "requires_text": "Rows with no date are left out while a range is set",
+    "reachable_from": [
+      "omsExportTasks",
+      "omsExportCalendar",
+      "omsExportSops"
+    ],
+    "symbol": "omsRangeSplit",
+    "why": "Rev 74. The range must be applied by every writer that has rows with dates, not just the one it was written for. A screen that quietly ignores the range hands somebody a briefing pack wider than they asked for and says nothing."
+  },
+  {
+    "id": "rev74-range-narrows-months",
+    "code": "function omsExportRangeMonths",
+    "requires_text": "only the month columns that range spans",
+    "reachable_from": [
+      "omsExportRob"
+    ],
+    "symbol": "omsExportRangeMonths",
+    "why": "Rev 74. Cadence records a month and no year, so its range picks columns; the tooltip says exactly that and this is what makes it true."
+  },
+  {
+    "id": "rev74-directory-has-no-range",
+    "text": "a person record carries no date",
+    "forbids_code": "omsExportRangeDialog('Directory')",
+    "why": "Rev 74. The Directory tooltip, the User Guide and the About sheet all say the directory has no range because a person record has no date. Wiring it to the dialog would make three pieces of text false at once - the shape of claim that Rev 73 needed check 16 for, declared here instead."
+  },
+  {
+    "id": "rev74-about-states-the-range",
+    "text": "records the screen, the date range, the filter",
+    "requires_code": "['Date range',omsExportRangeLabel()]",
+    "why": "Rev 74. A file that does not say what period it covers is the reason OMS-026 was opened; the guide's promise is one cell."
+  },
+  {
+    "id": "rev74-about-counts-the-undated",
+    "text": "the second sheet of the file counts them",
+    "requires_code": "['Rows with no date, left out',cut.undated]",
+    "why": "Rev 74. The dialog and the guide both promise the count. Without it a task with no due date is dropped from a briefing export in silence."
+  },
+  {
+    "id": "rev74-multiday-event-overlaps",
+    "text": "A multi-day event is included when any of its days",
+    "requires_code": "e=>{const en=calEventEnd(e);return en?isoDate(en):String(e.date||'')}",
+    "why": "Rev 74. Matching on the start date alone loses a conference that begins the week before the range - and calEventEnd is the one function that decides where an event ends, so the export reads it rather than keeping a fourth copy of the rule."
   }
 ]

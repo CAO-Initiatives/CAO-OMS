@@ -176,7 +176,12 @@ for fn, binding in [("omsSortTasks", "sortable-columns-are-described"),
                     ("exportChecklist", "checklist-export-is-described"),
                     ("OMS_OPS_LANDED", "confirmation-means-applied"),
                     ("omsRobId", "new-workstream-has-an-id"),
-                    ("OMS_RECONCILE_SCHEDULE", "reconcile-watch-slows-not-stops")]:
+                    ("OMS_RECONCILE_SCHEDULE", "reconcile-watch-slows-not-stops"),
+                    # Rev 74. omsRangeSplit orphaned is an export that quietly
+                    # ignores the range the user chose; omsExportRangeRun
+                    # orphaned is a dialog whose Export button does nothing.
+                    ("omsRangeSplit", "rev74-range-narrows-rows"),
+                    ("omsExportRangeRun", "rev74-dispatcher-reaches-the-writers")]:
     t = sandbox()
     orphan(t, fn)
     rc, out = run(t)
@@ -189,6 +194,33 @@ edit_html(t, "function openTaskModal(", "function openTaskModalRenamed(")
 rc, out = run(t)
 check("a reachable_from host that has been renamed is reported STALE",
       rc == 1 and "STALE" in out and "attributed-notes-are-described" in out, out.strip()[:200])
+
+# Rev 74. The range dialog is promised on four screens by one unscoped
+# sentence, which is the exact shape reachable_from exists for: take it off ONE
+# screen, leave it on the other three, and the definition is still there.
+t = sandbox()
+edit_html(t, '''onclick="omsExportRangeDialog('SOPs')"''', '''onclick="omsExportSops()"''')
+rc, out = run(t)
+check("Rev 74: dropping the range dialog from one screen of four is caught",
+      rc == 1 and "rev74-range-dialog-on-every-dated-grid" in out, out.strip()[:200])
+
+# Rev 74. The Directory says it has no range because a person record has no
+# date. Wiring it to the dialog makes the tooltip, the guide and the About sheet
+# false together, and only a forbids_code binding notices.
+t = sandbox()
+edit_html(t, '''onclick="omsExportPeople()"''', '''onclick="omsExportRangeDialog('Directory')"''')
+rc, out = run(t)
+check("Rev 74: giving the Directory a range it says it does not have is caught",
+      rc == 1 and "rev74-directory-has-no-range" in out, out.strip()[:200])
+
+# Rev 74. The About sheet's undated count is the difference between a short
+# export and a silent one, and the dialog promises it in so many words.
+t = sandbox()
+edit_html(t, "rows.push(['Rows with no date, left out',cut.undated])",
+             "rows.push(['Rows dropped',cut.undated])")
+rc, out = run(t)
+check("Rev 74: renaming the undated count out from under the promise is caught",
+      rc == 1 and "rev74-about-counts-the-undated" in out, out.strip()[:200])
 
 # ...and reachability must not fire on a binding that is genuinely fine.
 t = sandbox()

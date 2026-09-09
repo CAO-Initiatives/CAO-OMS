@@ -300,6 +300,26 @@ else
   fail "16 test/sop_no_notification_negative.py is missing from the repository"
 fi
 
+# ---------- 17. the export date range keeps doing what the interface says ----------
+# Rev 74 (OMS-026). The Export button on Tasks, Calendars, SOPs and Cadence now
+# takes a date range, and three of the four things the interface promises about
+# it are promises about what OMS does NOT do: with no range chosen nothing is
+# filtered at all, the Admin directory has no range because a person record has
+# no date, and the range is never written to storage. Those are worth exactly as
+# much as a check that would notice them starting to be false. The smoke suite
+# carries the checks; this control breaks the artifact seven ways and requires
+# each break to be caught, the same reasoning as check 16.
+if [ -f test/export_range_negative.py ]; then
+  if python3 test/export_range_negative.py >/dev/null 2>&1; then
+    pass "17 the export date-range guards still catch real drift"
+  else
+    python3 test/export_range_negative.py || true
+    fail "17 the export date-range guards no longer catch drift - their mutation control failed"
+  fi
+else
+  fail "17 test/export_range_negative.py is missing from the repository"
+fi
+
 echo "=================================================="
 if [ "$FAILED" -eq 0 ]; then
   echo "GATE PASSED"

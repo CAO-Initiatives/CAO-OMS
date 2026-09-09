@@ -3196,9 +3196,20 @@ ok('Rev 64: below 600 px the header wraps and form fields reach 16 px, so a phon
    /@media\(max-width:600px\)\{header\{flex-wrap:wrap[^}]*\}\.hr\{flex-wrap:wrap\}/.test(html)
    && /#mbody input,#mbody select,#mbody textarea\{font-size:16px\}/.test(html));
 ok('Rev 64: the phone rule does not touch the desktop header', /header\{background:var\(--nv\);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky/.test(html));
-ok('Rev 63: five Export buttons, one per grid',
-   (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length === 5,
-   (html.match(/onclick="omsExport(Tasks|Calendar|Sops|Rob|People)\(\)"/g) || []).length + ' found');
+// Rev 74. Four of the five now open the range dialog first. The Directory
+// button still exports at once, because a person record has no date to range
+// on, and the count is split so that wiring the Directory to the dialog - or
+// dropping the dialog off a screen and going back to a direct download - fails
+// here rather than passing as "still five buttons".
+ok('Rev 63 / Rev 74: five Export buttons, one per grid',
+   (html.match(/onclick="omsExport(?:RangeDialog\('(?:Tasks|Calendar|SOPs|Cadence)'\)|People\(\))"/g) || []).length === 5,
+   (html.match(/onclick="omsExport(?:RangeDialog\('(?:Tasks|Calendar|SOPs|Cadence)'\)|People\(\))"/g) || []).length + ' found');
+ok('Rev 74: the four grids with a date open the range dialog',
+   (html.match(/onclick="omsExportRangeDialog\('(?:Tasks|Calendar|SOPs|Cadence)'\)"/g) || []).length === 4,
+   (html.match(/onclick="omsExportRangeDialog\('(?:Tasks|Calendar|SOPs|Cadence)'\)"/g) || []).length + ' found');
+ok('Rev 74: the Directory, which has no date, still exports at once',
+   (html.match(/onclick="omsExportPeople\(\)"/g) || []).length === 1
+   && !/omsExportRangeDialog\('Directory'\)/.test(html));
   {
     const h = build();
     h.run(`OMS_POST=async()=>{throw new Error('offline')};ST.tasks[0].title='Really unsent';OMS_EDIT_SEQ++;OMS_COLLECTIONS.forEach(t=>_dirty.add(t));`);
@@ -4294,6 +4305,188 @@ console.log('\n# Rev 54: the dialog and the keyboard (A-20, C-09)');
     ok('A-20: confirm() answers yes in this harness, so the cross-link proceeds and the flag clears',
        ran === true && ctx.__T.fn('MC').dirty === false);
   }
+}
+
+
+// ---- Rev 74 (OMS-026): the export takes a date range.
+// The row has asked for this since 30 July 2026: a Dean briefing wants one week
+// or one quarter as a file, and Rev 63 could only write the whole screen. Every
+// assertion here stands for a way this could be wrong in the direction that
+// matters - a row silently dropped from a briefing pack, or a file that does not
+// say what it covers.
+console.log('\n# Rev 74: the export takes a date range');
+{
+  T.fn("globalThis.__snap74=JSON.stringify({t:ST.tasks,e:ST.events,s:ST.sops,r:ST.rob,p:ST.people,rev:OMS_REVISION})");
+  T.fn("globalThis.XLSX={utils:{book_new:()=>({s:[]}),aoa_to_sheet:a=>({a}),book_append_sheet:(wb,ws,n)=>wb.s.push({n,a:ws.a})},writeFile:(wb,f)=>{globalThis.__xl={wb,f}}}");
+  T.fn("OMS_USER={role:'admin',displayName:'Hossam Elsaie'};OMS_REVISION=904");
+  T.fn("ST.tasks=[{id:'r1',title:'Inside',owner:'Hossam Elsaie',status:'Not Started',due:'2030-02-10',_version:1}," +
+       "{id:'r2',title:'Before',owner:'Hossam Elsaie',status:'Not Started',due:'2030-01-05',_version:1}," +
+       "{id:'r3',title:'After',owner:'Hossam Elsaie',status:'Not Started',due:'2030-03-20',_version:1}," +
+       "{id:'r4',title:'Undated',owner:'Hossam Elsaie',status:'Not Started',due:'',_version:1}];" +
+       "taskSt='All';taskOw='All';taskCat='All';taskQ='';taskSort='';taskSortDir='asc'");
+
+  // The load-bearing guard: with no range chosen this is Rev 63 exactly,
+  // undated rows included. If omsRangeSplit ever starts filtering when nobody
+  // asked, a task with no due date disappears from every export in the system.
+  T.fn("_expRange={start:'',end:''};omsExportTasks()");
+  ok('Rev 74: with no range chosen the export is unchanged, undated rows included',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 5
+     && T.fn("globalThis.__xl.wb.s[0].a.some(r=>r[0]==='Undated')") === true,
+     T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
+  ok('Rev 74: ...and the About sheet says there was no range',
+     /^None; every row/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]")),
+     T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]"));
+  ok('Rev 74: ...and does not offer counts for a range nobody set',
+     T.fn("globalThis.__xl.wb.s[1].a.some(r=>r[0]==='Rows left out by the range')") === false);
+
+  T.fn("_expRange={start:'2030-02-01',end:'2030-02-28'};omsExportTasks()");
+  ok('Rev 74: a range keeps only the tasks due inside it',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2
+     && T.fn('globalThis.__xl.wb.s[0].a[1][0]') === 'Inside',
+     T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
+  ok('Rev 74: ...and the About sheet counts what the range left out, dated and undated apart',
+     T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Rows left out by the range')[1]") === 2
+     && T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Rows with no date, left out')[1]") === 1);
+  ok('Rev 74: ...and states the range in words',
+     T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]") === '2/1/2030 to 2/28/2030',
+     T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]"));
+  ok('Rev 74: ...and the Filter and sort cell carries it too, so one cell tells the whole story',
+     /Date range: 2\/1\/2030 to 2\/28\/2030/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Filter and sort')[1]")));
+  ok('Rev 74: ...and the screen filter is still obeyed underneath the range',
+     /Status: All/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Filter and sort')[1]")));
+
+  // One-sided ranges. "Everything from the retreat onwards" is a real request.
+  T.fn("_expRange={start:'2030-02-01',end:''};omsExportTasks()");
+  ok('Rev 74: an open-ended range keeps everything from its start onwards',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 3
+     && /^From 2\/1\/2030 onwards/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]")));
+  T.fn("_expRange={start:'',end:'2030-01-31'};omsExportTasks()");
+  ok('Rev 74: ...and one with only an end keeps everything up to it',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2
+     && T.fn('globalThis.__xl.wb.s[0].a[1][0]') === 'Before'
+     && /^Up to 1\/31\/2030/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]")));
+
+  // A header-only spreadsheet is not an answer to a question about a week.
+  // ALERTS is module scope in this harness, not sandbox scope: naming it inside
+  // T.fn is a ReferenceError that abandons the rest of that call, leaving the
+  // PREVIOUS export's workbook in place. A refusal that never ran then reads as
+  // one that did, which is the shape of assertion this suite exists to avoid.
+  const before74 = ALERTS.length;
+  T.fn("globalThis.__xl=null;_expRange={start:'2031-01-01',end:'2031-01-31'};omsExportTasks()");
+  ok('Rev 74: a range that matches nothing refuses instead of writing a header-only file',
+     T.fn('globalThis.__xl') === null && ALERTS.length > before74);
+  ok('Rev 74: ...and the refusal names the range so it can be widened',
+     /no row falls inside 1\/1\/2031 to 1\/31\/2031/.test(ALERTS[ALERTS.length - 1]),
+     ALERTS[ALERTS.length - 1]);
+
+  // The multi-day case. A conference that starts before the range and ends
+  // inside it is IN the briefing; matching on the start date alone loses it,
+  // which is the whole reason omsInExportRange takes two dates.
+  T.fn("ST.events=[{id:'v1',title:'Spanning',date:'2030-01-28',endDate:'2030-02-03',source:'Ari',category:'Cabinet'}," +
+       "{id:'v2',title:'Squarely in',date:'2030-02-14',source:'Ari',category:'Cabinet'}," +
+       "{id:'v3',title:'Wholly before',date:'2030-01-05',endDate:'2030-01-06',source:'Ari',category:'Cabinet'}];" +
+       "ST.tasks=[];calSrc='ari';calCadence='all';calSearch='';_expRange={start:'2030-02-01',end:'2030-02-28'};omsExportCalendar()");
+  ok('Rev 74: a multi-day event overlapping the range is exported, though it starts outside it',
+     T.fn("globalThis.__xl.wb.s[0].a.some(r=>r[3]==='Spanning')") === true
+     && T.fn("globalThis.__xl.wb.s[0].a.some(r=>r[3]==='Squarely in')") === true
+     && T.fn("globalThis.__xl.wb.s[0].a.some(r=>r[3]==='Wholly before')") === false,
+     T.fn('globalThis.__xl.wb.s[0].a.length') + ' rows');
+  ok('Rev 74: ...and the calendar export reads the end date through calEventEnd, not a second copy of the rule',
+     /calEventEnd\(e\)/.test(String(G('omsExportCalendar'))));
+
+  // SOPs range on the review date, which is the date the screen shows.
+  T.fn("ST.sops=[{id:'q1',process:'Due in range',category:'Ops',reviewDue:'2030-02-09'}," +
+       "{id:'q2',process:'Due later',category:'Ops',reviewDue:'2030-09-09'}," +
+       "{id:'q3',process:'Never reviewed',category:'Ops',reviewDue:''}];sopQ='';sopCat='All';omsExportSops()");
+  ok('Rev 74: SOPs range on the review due date',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2
+     && T.fn('globalThis.__xl.wb.s[0].a[1][1]') === 'Due in range'
+     && T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Rows with no date, left out')[1]") === 1);
+
+  // Cadence has a month and no year, so the range picks COLUMNS.
+  T.fn("ST.rob=[{id:'rob-a',ws:'WS A',cells:MNA.map((m,i)=>'m'+i),st:MNA.map(()=>'ip')}];" +
+       "_expRange={start:'2030-01-01',end:'2030-03-31'};omsExportRob()");
+  ok('Rev 74: the Cadence range writes only the month columns it spans',
+     T.fn("globalThis.__xl.wb.s[0].a[0].join(',')") === 'Workstream,Jan,Feb,Mar',
+     T.fn("globalThis.__xl.wb.s[0].a[0].join(',')"));
+  ok('Rev 74: ...keeping every workstream, and the cell text with its status',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2 && T.fn('globalThis.__xl.wb.s[0].a[1][1]') === 'm0 [In Progress]');
+  ok('Rev 74: ...and the About sheet counts columns, not rows, because that is what the range picked',
+     /^3 of 12$/.test(String(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Month columns written')[1]"))),
+     String(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Month columns written')[1]")));
+  T.fn("_expRange={start:'2030-11-01',end:'2031-02-28'};omsExportRob()");
+  ok('Rev 74: a Cadence range across the year end picks all four months, in the grid\'s own order',
+     T.fn("globalThis.__xl.wb.s[0].a[0].join(',')") === 'Workstream,Jan,Feb,Nov,Dec',
+     T.fn("globalThis.__xl.wb.s[0].a[0].join(',')"));
+  T.fn("_expRange={start:'2030-01-01',end:'2031-06-30'};omsExportRob()");
+  ok('Rev 74: a Cadence range of twelve months or more is every month',
+     T.fn('globalThis.__xl.wb.s[0].a[0].length') === 13, T.fn('globalThis.__xl.wb.s[0].a[0].length') + ' columns');
+
+  // The Directory has no date, so it has no range - and must not silently
+  // inherit the one somebody set on Tasks a minute earlier.
+  T.fn("ST.people=[{id:'p1',name:'A Person',email:'a@x.org',role:'Ops',active:true}];" +
+       "_expRange={start:'2030-02-01',end:'2030-02-28'};omsExportPeople()");
+  ok('Rev 74: a range set elsewhere does not touch the Directory export',
+     T.fn('globalThis.__xl.wb.s[0].a.length') === 2 && T.fn('globalThis.__xl.wb.s[0].a[1][0]') === 'A Person');
+  ok('Rev 74: ...and its About sheet says why there is no range rather than leaving it blank',
+     /a person record carries no date/.test(T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]")),
+     T.fn("globalThis.__xl.wb.s[1].a.find(r=>r[0]==='Date range')[1]"));
+
+  // The dialog.
+  T.fn("_expRange={start:'',end:''};document.getElementById('mft').style.display='';omsExportRangeDialog('Calendar')");
+  ok('Rev 74: the dialog names the screen it was opened from', T.fn('_expScreen') === 'Calendar'
+     && T.fn("document.getElementById('mtitle').textContent") === 'Export Calendar');
+  ok('Rev 74: ...and offers a From and a To, each named by its own label',
+     /<label for="exp_start">From<\/label><input type="date" class="fc" id="exp_start"/.test(T.fn("document.getElementById('mbody').innerHTML"))
+     && /<label for="exp_end">To<\/label><input type="date" class="fc" id="exp_end"/.test(T.fn("document.getElementById('mbody').innerHTML")));
+  ok('Rev 74: ...and hides the shared footer, whose Save would sync nothing here',
+     T.fn("document.getElementById('mft').style.display") === 'none');
+  T.fn("openModal('Something else','<div></div>','ev',null)");
+  ok('Rev 74: ...and the next dialog gets the footer back, which is the trap in hiding it at all',
+     T.fn("document.getElementById('mft').style.display") === '');
+
+  T.fn("_expRange={start:'',end:''};omsExportRangeDialog('Tasks');" +
+       "document.getElementById('exp_start').value='2030-02-28';document.getElementById('exp_end').value='2030-02-01';" +
+       "globalThis.__xl=null;omsExportRangeApply()");
+  ok('Rev 74: a range that ends before it starts is refused, and nothing is written',
+     T.fn('globalThis.__xl') === null && /ends before it starts/.test(ALERTS[ALERTS.length - 1])
+     && T.fn('_expRange.start') === '', ALERTS[ALERTS.length - 1]);
+  T.fn("ST.tasks=[{id:'r1',title:'Inside',owner:'Hossam Elsaie',status:'Not Started',due:'2030-02-10',_version:1}];" +
+       "document.getElementById('exp_start').value='2030-02-01';document.getElementById('exp_end').value='2030-02-28';omsExportRangeApply()");
+  ok('Rev 74: Export in the dialog stores the range and writes the file for the screen it was opened from',
+     T.fn('_expRange.start') === '2030-02-01' && T.fn('_expScreen') === 'Tasks'
+     && /^OMS-Tasks-/.test(T.fn('globalThis.__xl.f')) && T.fn('globalThis.__xl.wb.s[0].a.length') === 2);
+  T.fn("omsExportRangeDialog('Tasks')");
+  ok('Rev 74: reopening the dialog shows the remembered range, so it is never applied unseen',
+     /id="exp_start" value="2030-02-01"/.test(T.fn("document.getElementById('mbody').innerHTML"))
+     && /id="exp_end" value="2030-02-28"/.test(T.fn("document.getElementById('mbody').innerHTML")));
+  T.fn("omsExportRangeClear()");
+  ok('Rev 74: Clear the range empties both fields and the remembered range',
+     T.fn('omsExportRangeActive()') === false
+     && T.fn("document.getElementById('exp_start').value") === ''
+     && T.fn("document.getElementById('exp_end').value") === '');
+  // Rev 74. The guide says the range is remembered "until you reload the page",
+  // which is a claim about what OMS does NOT do, and Rev 73 is the lesson: such
+  // a claim needs a check that would notice it starting to. A same-line regex
+  // would miss persistence written two lines away under any key it liked, so
+  // measure the distance - no reference to the range may sit near a store.
+  {
+    const at = (re) => [...main.matchAll(re)].map(m => m.index);
+    const range = at(/_expRange/g), stores = at(/localStorage|sessionStorage/g);
+    const near = range.some(i => stores.some(j => Math.abs(i - j) < 400));
+    ok('Rev 74: the range is held in memory only, so a reload does not crop tomorrow\'s export to last week',
+       range.length > 0 && !near,
+       range.length + ' references, nearest store ' +
+       Math.min(...range.map(i => Math.min(...stores.map(j => Math.abs(i - j))))) + ' chars away');
+  }
+  // Rev 74. Two boxes in the toolbar would be wiped by the sixty-second idle
+  // refresh mid-type; a dialog is what OMS_MODAL_OPEN() protects.
+  ok('Rev 74: the range lives in a dialog, which the idle refresh will not redraw',
+     /function OMS_MODAL_OPEN\(\)/.test(main) && /OMS_MODAL_OPEN\(\)/.test(String(G('OMS_WATCH_SAFE'))));
+  ok('Rev 74: every writer that can range is reachable from the one dispatcher',
+     ['omsExportTasks()', 'omsExportCalendar()', 'omsExportSops()', 'omsExportRob()']
+       .every(c => String(G('omsExportRangeRun')).includes(c)));
+  T.fn("closeModal();const __s=JSON.parse(globalThis.__snap74);ST.tasks=__s.t;ST.events=__s.e;ST.sops=__s.s;ST.rob=__s.r;ST.people=__s.p;OMS_REVISION=__s.rev;_expRange={start:'',end:''};_expScreen='';_dirty.clear();taskSel.clear()");
 }
 
 // ---------------------------------------------------------------- 5. release metadata
